@@ -57,7 +57,7 @@ for (const [i, q] of questions.entries()) {
   const r = receipts[i];
   const label = `#${i} ${q.answer.padEnd(8)} "${q.question}"`;
   if (!r || !q.model) {
-    console.log(`${label}\n    no receipt (asked before receipts existed, refused before reaching the model, or failed)`);
+    console.log(`${label}\n    no receipt (refused answers, failed runs and answers from before receipts existed carry none)`);
     continue;
   }
   const signer = recoverSigner(`${q.model}:${r.request_hash}:${r.response_hash}`, r.signature);

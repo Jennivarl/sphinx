@@ -130,7 +130,7 @@ cd sphinx
    ```bash
    cd ../scripts && npm ci && node verify-answers.mjs 4
    ```
-   Expected: for each answer with a receipt, `signer 0x… matches the receipt; listed in the model's live NEAR AI attestation report`. Answers given before receipts existed, and fishing questions refused before reaching the model, show `no receipt`.
+   Expected: for each answer with a receipt, `signer 0x… matches the receipt; listed in the model's live NEAR AI attestation report`. Refused answers, failed runs and answers from before receipts existed show `no receipt`.
 6. **Replay the end-to-end proof** with your own accounts (costs real NEAR, about 0.1 NEAR moved between your two accounts plus about 0.05 NEAR of fees): copy `.env.example` to `.env`, set `MAINNET_ACCOUNT_ID` and `MAINNET_PRIVATE_KEY` for an account that already runs your own deployment, then:
    ```bash
    node e2e.mjs mainnet
