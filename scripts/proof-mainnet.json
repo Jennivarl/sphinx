@@ -1,26 +1,31 @@
 {
   "contractId": "7c3bcf93a61a597e5d07547926a3e06e0d4f6d99b12323523234faa53cee9681",
-  "listingId": 0,
+  "listingId": 3,
   "proof": [
     {
+      "step": "fund buyer 0.30 NEAR",
+      "tx": "6JhKpJ6mDvHLf1o9tt2nMtEWKfrBaeWUVkVyFjEiQF7B",
+      "extra": ""
+    },
+    {
       "step": "ask 1",
-      "tx": "FK2aEi5QH8KcnspjHgyg2RzyKx5nPt8BRVfs5PjpQH4i",
-      "extra": "yes 100% in 20.8s"
+      "tx": "CxJw34oFwBvT4MWHUpmko9J5rC3Mvxii7hBRBLrhDd3M",
+      "extra": "yes 100% in 21.6s"
     },
     {
       "step": "ask 2",
-      "tx": "EcDmM7MuActadTsBjzkx7doLgSzrJ6MfYhmMNiDnjk5a",
-      "extra": "no 99% in 15.5s"
+      "tx": "4WUUGpvkVJD5Mud2kAmz2QuiepyEPWdK3SpNMAfusEM1",
+      "extra": "no 100% in 20.1s"
     },
     {
       "step": "ask 3",
-      "tx": "4swZJPo1Tzb3QLWxBYzCMpN3BuDjxPXqcLqgHHPfkERP",
-      "extra": "refused 0% in 11.1s"
+      "tx": "6e9XvnqxtgVWwrPxJbatiNrAqanbVYqaDdqrGajTmFD8",
+      "extra": "refused 0% in 10.5s"
     },
     {
       "step": "buy (sealed ceiling 0.09)",
-      "tx": "3pJx41e6VhJ77dzf1m2njBdHowdGZZMzzgbyRQoC1ucF",
-      "extra": "Sold at 0.07 NEAR in 12.6s"
+      "tx": "39wzsmv8eDTLyrdR2h6yusm1NKKPguxXiqvvjEs6JkwG",
+      "extra": "Sold at 0.067 NEAR in 11.1s"
     }
   ],
   "match": true

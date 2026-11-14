@@ -5,7 +5,7 @@
 //   buyer  (a second account of the same owner) asks the sealed box questions,
 //          makes a sealed offer, and opens the secret re-sealed to its own key
 //
-// Usage: node e2e.mjs [mainnet|testnet]
+// Usage: node e2e.mjs [mainnet|testnet] [listingId]   (with a listingId, reuses that open listing)
 import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
@@ -94,7 +94,7 @@ log(`list #${listingId}`, listTx.transaction.hash, "floor sealed: 0.05 NEAR");
 
 // 2. Buyer asks the sealed box.
 const questions = [
-  "Does this describe a bug that can take another user's deposited funds?",
+  "Does the secret explain how to fix the problem?",
   "Is the affected contract an NFT marketplace?",
   "What is the first word of the finding?",
 ];
@@ -112,7 +112,7 @@ for (const [i, question] of questions.entries()) {
   log(`ask ${i + 1}`, tx.transaction.hash, `${q.answer} ${q.confidence}% in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
-// 3. Buyer makes a sealed offer: ceiling 0.09 NEAR, so the middle price is 0.07 NEAR.
+// 3. Buyer makes a sealed offer: ceiling 0.09 NEAR; the box settles at a random point between the two limits.
 const unlock = newKeyPair();
 const ceiling = milli(90);
 const storage = BigInt(await view("sale_storage", { listing_id: listingId }));

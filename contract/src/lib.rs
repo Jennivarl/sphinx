@@ -1,12 +1,13 @@
 //! Sphinx: a market for sealed secrets on NEAR.
 //!
 //! A seller locks a secret to the sealed box (an OutLayer TEE program) and
-//! commits its SHA-256. Buyers ask up to five yes/no questions, answered by a
-//! private model inside the box. To buy, the buyer seals a price ceiling and
-//! deposits at least that much; the box opens both sealed prices, and if they
-//! overlap the deal settles at the middle: the seller is paid, the buyer gets
-//! the change and the secret re-sealed to their own key. If anything fails, the
-//! buyer is refunded in full and the listing reopens.
+//! commits its SHA-256. Each buyer may ask five yes/no questions (thirty per
+//! listing), answered by an attested NEAR AI model called from inside the box.
+//! To buy, the buyer seals a price ceiling and deposits at least that much; the
+//! box opens both sealed prices, and if they overlap the deal settles at a
+//! random point 25-75% of the way between them: the seller is paid, the buyer
+//! gets the change and the secret re-sealed to their own key. If anything
+//! fails, the buyer is refunded in full and the listing reopens.
 
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::{self, json, Value};

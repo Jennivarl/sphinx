@@ -56,25 +56,25 @@ sequenceDiagram
 | **OutLayer author secrets + access rules** | The NEAR AI key is an encrypted OutLayer secret, readable only by this exact build of the box and only for calls that come through the Sphinx contract | `enclave/manifest.json` `author_secrets` |
 | **OutLayer network allowlist** | The box may only reach `cloud-api.near.ai` | `enclave/manifest.json` `capabilities.network` |
 | **NEAR AI Cloud** (private inference in TEEs) | Answers questions; the box refuses any model that does not publish a TEE attestation, so a secret never reaches a third-party API | `enclave/src/lib.rs` `ATTESTED_MODELS`, `choose_model` |
-| **NEAR yield/resume** | Every question and every sale is one logical transaction: the contract pauses while the box runs | `contract/src/lib.rs` `on_answer`, `on_settled` |
+| **NEAR yield/resume** (inside OutLayer) | OutLayer's `request_execution` yields until the TEE worker resumes it with the box's output; Sphinx's callback then records the answer or settles the sale, so every question and every sale completes as one chain of receipts | `contract/src/lib.rs` `run_box`, `on_answer`, `on_settled` |
 | **NEAR smart contract (Rust, near-sdk 5)** | Listings, question limits, sale lock, escrow, pay-on-confirmation, refunds | `contract/src/lib.rs` |
 | **NEAR wallets** (Wallet Selector: Meteor, HOT, Intear, MyNearWallet) | Sign in and sign `list`, `ask`, `buy` | `web/src/near.ts` |
 
 ## Proof: real mainnet run
 
-Full flow of the first contract version on mainnet against listing #0 (seller and buyer are two accounts of the same owner). The current version adds owner-stamped seals, the trap scan, the reversed-question check and the random price point; they are covered by the unit tests below. Script: [`scripts/e2e.mjs`](scripts/e2e.mjs), results: [`scripts/proof-mainnet.json`](scripts/proof-mainnet.json).
+The current contract and sealed box (build `38e3f784…`), run on mainnet on 14 Nov 2026 against open listing #3, "Missing slippage check in a swap router's multi-hop path" (seller lowest price 0.05 NEAR, sealed). Seller and buyer are two accounts of the same owner. Script: [`scripts/e2e.mjs`](scripts/e2e.mjs) `mainnet 3`, results: [`scripts/proof-mainnet.json`](scripts/proof-mainnet.json).
 
 | Step | Result | Transaction |
 |---|---|---|
-| Contract publishes the box key (contract → OutLayer → contract) | key `zzV8vOdQ…JRY=` in 11.5 s | [`6s8ycWMU…`](https://nearblocks.io/txns/6s8ycWMU46FS5mHBueKxq94LJ6mzkcCHN87TSjaw8Dri) |
-| "Does this describe a bug that can take another user's deposited funds?" | **yes**, 100% | [`FK2aEi5Q…`](https://nearblocks.io/txns/FK2aEi5QH8KcnspjHgyg2RzyKx5nPt8BRVfs5PjpQH4i) |
-| "Is the affected contract an NFT marketplace?" | **no**, 99% | [`EcDmM7Mu…`](https://nearblocks.io/txns/EcDmM7MuActadTsBjzkx7doLgSzrJ6MfYhmMNiDnjk5a) |
-| "What is the first word of the finding?" | **refused** | [`4swZJPo1…`](https://nearblocks.io/txns/4swZJPo1Tzb3QLWxBYzCMpN3BuDjxPXqcLqgHHPfkERP) |
-| A buy while the box could not answer | full refund, listing reopened | [`8QTTmNeM…`](https://nearblocks.io/txns/8QTTmNeMkfnsNqkEWVUnEXEXYV7aoXWZyBtqaaApN8f3) |
-| Sealed offer: buyer max 0.09 NEAR vs seller min 0.05 NEAR | **sold at 0.07 NEAR** (this first version settled at the middle), change refunded | [`3pJx41e6…`](https://nearblocks.io/txns/3pJx41e6VhJ77dzf1m2njBdHowdGZZMzzgbyRQoC1ucF) |
+| Contract publishes the box key (contract → OutLayer → contract) | key `zzV8vOdQ…JRY=` | [`6s8ycWMU…`](https://nearblocks.io/txns/6s8ycWMU46FS5mHBueKxq94LJ6mzkcCHN87TSjaw8Dri) |
+| "Does the secret explain how to fix the problem?" (trap scan, question, reversed question) | **yes**, high confidence, 21.6 s | [`CxJw34oF…`](https://nearblocks.io/txns/CxJw34oFwBvT4MWHUpmko9J5rC3Mvxii7hBRBLrhDd3M) |
+| "Is the affected contract an NFT marketplace?" | **no**, high confidence, 20.1 s | [`4WUUGpvk…`](https://nearblocks.io/txns/4WUUGpvkVJD5Mud2kAmz2QuiepyEPWdK3SpNMAfusEM1) |
+| "What is the first word of the finding?" | **refused** (fishing question, never reaches the model) | [`6e9Xvnqx…`](https://nearblocks.io/txns/6e9XvnqxtgVWwrPxJbatiNrAqanbVYqaDdqrGajTmFD8) |
+| Sealed offer: buyer max 0.09 NEAR vs seller min 0.05 NEAR | **sold at 0.067516 NEAR**, a random point 44% of the way between the two limits; change refunded | [`39wzsmv8…`](https://nearblocks.io/txns/39wzsmv8eDTLyrdR2h6yusm1NKKPguxXiqvvjEs6JkwG) |
 | Buyer opens the secret with their own key | SHA-256 matches the listed fingerprint | `scripts/proof-mainnet.json` `"match": true` |
+| Earlier run (first contract version): a buy while the box could not answer | full refund, listing reopened | [`8QTTmNeM…`](https://nearblocks.io/txns/8QTTmNeMkfnsNqkEWVUnEXEXYV7aoXWZyBtqaaApN8f3) |
 
-Measured on mainnet: a question round trip takes 11 to 21 s (most of it block time and the worker queue; the box itself runs in 1 to 6 s). A box run costs about 0.0012 NEAR; the rest of each 0.01 NEAR run fee is refunded by OutLayer.
+Measured on mainnet: a question round trip takes 10 to 22 s; with the trap scan and the reversed question the box itself runs in 10 to 13 s (three model calls), a refused fishing question or a settlement in about 1 s. A box run costs 0.001 to 0.0023 NEAR; the rest of each 0.01 NEAR run fee is refunded by OutLayer.
 
 ## How to Test
 
@@ -82,7 +82,7 @@ Measured on mainnet: a question round trip takes 11 to 21 s (most of it block ti
 
 You need a NEAR **mainnet** wallet (Meteor, HOT, Intear or MyNearWallet) with about **0.5 NEAR**. Most of it is only reserved for gas and comes straight back; a question really costs about 0.011 NEAR.
 
-1. Open https://sphinx-near.vercel.app → you see the market: two open **Demo** listings and listing #0, "First-depositor inflation bug in an ERC-4626 vault", marked **Sold** with its answered questions.
+1. Open https://sphinx-near.vercel.app → you see the market: an open **Demo** listing, and listings #0 and #3 marked **Sold** with their answered questions (the proof runs above).
 2. Click **Verify** → you see the box's public key, read live from the contract, and how each guarantee is enforced.
 3. Click **Sell a secret**, sign in, type a title, at least 20 characters of secret and a lowest price like `0.05`, then **Seal and list** → your wallet asks you to approve `list`; after it confirms you land on your new listing, showing the fingerprint and "Lowest price: Sealed".
 4. Sign in with a **different** account (or open a **Demo** listing) and ask "Does it explain how to fix the problem?" → the answer shows "the box is thinking…", then within about 40 seconds turns into **YES** or **NO** with a confidence level.
