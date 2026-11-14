@@ -352,3 +352,43 @@ fn failed_run_gives_the_listing_question_back() {
     c.on_answer(id, 0, Err(PromiseError::Failed));
     assert_eq!(c.get_listing(id).unwrap().questions, 0);
 }
+
+fn receipt() -> serde_json::Value {
+    serde_json::json!({
+        "chat_id": "chatcmpl-f953d03b-0be6-42aa-bdbe-0e5f98f89903",
+        "request_hash": "1".repeat(64),
+        "response_hash": "2".repeat(64),
+        "signature": format!("0x{}", "ab".repeat(65)),
+        "signing_address": "0xfe0071895500a9755c18044948ab4f4e1a7f337e",
+    })
+}
+
+#[test]
+fn answer_keeps_the_near_ai_signature_receipt() {
+    let (mut c, id) = listed();
+    ctx(2, ASK_DEPOSIT.as_yoctonear());
+    c.ask(id, "Does it describe a bug that can drain funds?".into());
+    let mut out = serde_json::json!({ "ok": true, "answer": "yes", "confidence": 100, "model": "m" });
+    out["receipt"] = receipt();
+    out["receipt"]["extra"] = "dropped".into();
+    c.on_answer(id, 0, Ok(Some(out)));
+    let receipts = c.get_receipts(id);
+    assert_eq!(receipts.len(), 1);
+    let stored = receipts[0].clone().unwrap();
+    assert_eq!(stored["signing_address"], "0xfe0071895500a9755c18044948ab4f4e1a7f337e");
+    assert!(stored.get("extra").is_none());
+}
+
+#[test]
+fn malformed_or_missing_receipts_are_not_stored() {
+    let (mut c, id) = listed();
+    ctx(2, ASK_DEPOSIT.as_yoctonear());
+    c.ask(id, "Does it describe a bug that can drain funds?".into());
+    let mut bad = receipt();
+    bad["signature"] = "0xabcd".into();
+    c.on_answer(id, 0, Ok(Some(serde_json::json!({ "ok": true, "answer": "yes", "confidence": 100, "receipt": bad }))));
+    ctx(3, ASK_DEPOSIT.as_yoctonear());
+    c.ask(id, "Is the affected contract an NFT marketplace?".into());
+    c.on_answer(id, 1, Ok(Some(serde_json::json!({ "ok": true, "answer": "no", "confidence": 100 }))));
+    assert_eq!(c.get_receipts(id), vec![None, None]);
+}

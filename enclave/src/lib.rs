@@ -233,6 +233,58 @@ pub fn user_prompt(title: &str, secret: &str, question: &str) -> String {
     )
 }
 
+/// NEAR AI Cloud's proof for one completion: the model's TEE signs
+/// `<model>:<SHA-256 of the exact request bytes>:<SHA-256 of the exact response
+/// bytes>` with a key listed in that model's public attestation report. The
+/// hashes reveal nothing about the secret or the question.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Receipt {
+    pub chat_id: String,
+    pub request_hash: String,
+    pub response_hash: String,
+    pub signature: String,
+    pub signing_address: String,
+}
+
+/// Builds a receipt from NEAR AI's `/v1/signature` reply, only if it is an
+/// ECDSA signature by the model's own TEE over exactly this request and response.
+pub fn receipt_from_signature(
+    reply: &serde_json::Value,
+    model: &str,
+    chat_id: &str,
+    request_hash: &str,
+    response_hash: &str,
+) -> Option<Receipt> {
+    let field = |key: &str| reply.get(key).and_then(|v| v.as_str());
+    let expected = format!("{model}:{request_hash}:{response_hash}");
+    if field("text")? != expected || field("signature_kind")? != "provider_tee" || field("signing_algo")? != "ecdsa" {
+        return None;
+    }
+    let signature = field("signature")?;
+    let signing_address = field("signing_address")?;
+    if !is_hex(signature, 130) || !is_hex(signing_address, 40) || !valid_chat_id(chat_id) {
+        return None;
+    }
+    Some(Receipt {
+        chat_id: chat_id.to_string(),
+        request_hash: request_hash.to_string(),
+        response_hash: response_hash.to_string(),
+        signature: signature.to_lowercase(),
+        signing_address: signing_address.to_lowercase(),
+    })
+}
+
+/// NEAR AI completion ids look like `chatcmpl-<uuid>`; anything else is never
+/// put into a URL or on-chain.
+pub fn valid_chat_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 100 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+fn is_hex(text: &str, digits: usize) -> bool {
+    text.strip_prefix("0x")
+        .is_some_and(|h| h.len() == digits && h.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,6 +448,44 @@ mod tests {
         assert!(choose_model(Some("openai/gpt-5-mini")).is_err());
         assert!(choose_model(Some("anthropic/claude-opus-5")).is_err());
         assert!(choose_model(Some("deepseek/deepseek-v4.1-flash")).is_err());
+    }
+
+    fn signature_reply(text: &str) -> serde_json::Value {
+        serde_json::json!({
+            "text": text,
+            "signature": format!("0x{}", "ab".repeat(65)),
+            "signing_address": "0xFE0071895500A9755C18044948AB4F4E1A7F337E",
+            "signing_algo": "ecdsa",
+            "signature_kind": "provider_tee",
+        })
+    }
+
+    #[test]
+    fn receipt_accepts_a_model_signature_over_this_exact_exchange() {
+        let (req, resp) = ("1".repeat(64), "2".repeat(64));
+        let reply = signature_reply(&format!("{DEFAULT_MODEL}:{req}:{resp}"));
+        let r = receipt_from_signature(&reply, DEFAULT_MODEL, "chatcmpl-f953d03b-0be6", &req, &resp).unwrap();
+        assert_eq!(r.signing_address, "0xfe0071895500a9755c18044948ab4f4e1a7f337e");
+        assert_eq!(r.chat_id, "chatcmpl-f953d03b-0be6");
+    }
+
+    #[test]
+    fn receipt_rejects_signatures_over_anything_else() {
+        let (req, resp) = ("1".repeat(64), "2".repeat(64));
+        // Another response, another model, or a gateway-only signature.
+        let other = signature_reply(&format!("{DEFAULT_MODEL}:{req}:{}", "3".repeat(64)));
+        assert!(receipt_from_signature(&other, DEFAULT_MODEL, "chatcmpl-1", &req, &resp).is_none());
+        let model = signature_reply(&format!("z-ai/glm-5.3-flash:{req}:{resp}"));
+        assert!(receipt_from_signature(&model, DEFAULT_MODEL, "chatcmpl-1", &req, &resp).is_none());
+        let mut gateway = signature_reply(&format!("{DEFAULT_MODEL}:{req}:{resp}"));
+        gateway["signature_kind"] = "gateway".into();
+        assert!(receipt_from_signature(&gateway, DEFAULT_MODEL, "chatcmpl-1", &req, &resp).is_none());
+        let mut short = signature_reply(&format!("{DEFAULT_MODEL}:{req}:{resp}"));
+        short["signature"] = "0xabcd".into();
+        assert!(receipt_from_signature(&short, DEFAULT_MODEL, "chatcmpl-1", &req, &resp).is_none());
+        // An id that could change the signature URL is never used.
+        let good = signature_reply(&format!("{DEFAULT_MODEL}:{req}:{resp}"));
+        assert!(receipt_from_signature(&good, DEFAULT_MODEL, "../v1/x?y=1", &req, &resp).is_none());
     }
 
     #[test]

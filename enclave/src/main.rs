@@ -3,6 +3,7 @@
 //! Reads one JSON request on stdin and prints one JSON reply on stdout:
 //!   {"op":"pubkey"}                                      -> the box's public key
 //!   {"op":"ask", title, seller, sealed_secret, question} -> yes / no / refused + confidence level
+//!                                                          + NEAR AI's TEE signature receipt
 //!   {"op":"settle", seller, buyer, sealed_secret, secret_hash, sealed_floor,
 //!                   sealed_ceiling, deposit, buyer_public_key} -> deal price + secret sealed to the buyer
 //!
@@ -35,8 +36,18 @@ mod host {
 const KEY_PATH: &str = "sphinx-box";
 const KEY_LABEL: &[u8] = b"sphinx-x25519-v1";
 const NEAR_AI_URL: &str = "https://cloud-api.near.ai/v1/chat/completions";
+const NEAR_AI_SIGNATURE_URL: &str = "https://cloud-api.near.ai/v1/signature";
 /// Thinking models spend tokens reasoning before they answer.
 const MAX_TOKENS: u32 = 800;
+
+/// One model reply plus what is needed to fetch its signature: the completion
+/// id and the SHA-256 of the exact request and response bytes.
+struct ModelReply {
+    content: String,
+    chat_id: String,
+    request_hash: String,
+    response_hash: String,
+}
 
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "lowercase")]
@@ -86,7 +97,7 @@ fn handle(input: &str) -> Result<Value, String> {
             let secret = open_for(&secret_key, &sealed_secret, &seller)?;
 
             // 1. Trap scan: a secret that tries to steer the judge is never answered.
-            let scan = ask_model(model, TRAP_SCAN_PROMPT, &trap_scan_prompt(&secret))?;
+            let scan = ask_model(model, TRAP_SCAN_PROMPT, &trap_scan_prompt(&secret))?.content;
             if parse_trap_scan(&scan) {
                 return Ok(json!({
                     "ok": true, "answer": "refused", "confidence": 0, "model": model,
@@ -95,12 +106,13 @@ fn handle(input: &str) -> Result<Value, String> {
             }
 
             // 2. The question and its opposite must get opposite answers.
-            let verdict = parse_verdict(&ask_model(model, SYSTEM_PROMPT, &user_prompt(&title, &secret, &question))?);
+            let main = ask_model(model, SYSTEM_PROMPT, &user_prompt(&title, &secret, &question))?;
+            let verdict = parse_verdict(&main.content);
             if verdict.answer == Answer::Refused {
                 return Ok(json!({ "ok": true, "answer": "refused", "confidence": 0, "model": model }));
             }
             let reversed = user_prompt(&title, &secret, &opposite_question(&question));
-            let opposite = parse_verdict(&ask_model(model, SYSTEM_PROMPT, &reversed)?);
+            let opposite = parse_verdict(&ask_model(model, SYSTEM_PROMPT, &reversed)?.content);
             if !consistent(verdict.answer, opposite.answer) {
                 return Ok(json!({
                     "ok": true, "answer": "refused", "confidence": 0, "model": model,
@@ -112,6 +124,8 @@ fn handle(input: &str) -> Result<Value, String> {
                 "answer": verdict.answer,
                 "confidence": bucket_confidence(verdict.confidence.min(opposite.confidence)),
                 "model": model,
+                // NEAR AI's TEE signature over the exchange that produced this answer.
+                "receipt": fetch_receipt(model, &main),
             }))
         }
         Request::Settle { seller, buyer, sealed_secret, secret_hash, sealed_floor, sealed_ceiling, deposit, buyer_public_key } => {
@@ -171,7 +185,7 @@ fn box_secret_key() -> Result<SecretKey, String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn ask_model(model: &str, system: &str, prompt: &str) -> Result<String, String> {
+fn ask_model(model: &str, system: &str, prompt: &str) -> Result<ModelReply, String> {
     use std::time::Duration;
     use wasi_http_client::Client;
 
@@ -190,6 +204,9 @@ fn ask_model(model: &str, system: &str, prompt: &str) -> Result<String, String> 
         .post(NEAR_AI_URL)
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {api_key}"))
+        // Signed replies need the canonical model id and the uncompressed bytes.
+        .header("x-no-aliasing", "true")
+        .header("Accept-Encoding", "identity")
         .connect_timeout(Duration::from_secs(15))
         .body(body.as_bytes())
         .send()
@@ -201,7 +218,12 @@ fn ask_model(model: &str, system: &str, prompt: &str) -> Result<String, String> 
     }
     let parsed: Value = serde_json::from_slice(&bytes).map_err(|_| "NEAR AI reply is not JSON".to_string())?;
     match parsed["choices"][0]["message"]["content"].as_str() {
-        Some(text) if !text.trim().is_empty() => Ok(text.to_string()),
+        Some(text) if !text.trim().is_empty() => Ok(ModelReply {
+            content: text.to_string(),
+            chat_id: parsed["id"].as_str().unwrap_or_default().to_string(),
+            request_hash: sha256_hex(body.as_bytes()),
+            response_hash: sha256_hex(&bytes),
+        }),
         _ => Err(format!(
             "NEAR AI reply has no answer (finish_reason: {})",
             parsed["choices"][0]["finish_reason"].as_str().unwrap_or("unknown")
@@ -210,6 +232,49 @@ fn ask_model(model: &str, system: &str, prompt: &str) -> Result<String, String> 
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn ask_model(_model: &str, _system: &str, _prompt: &str) -> Result<String, String> {
+fn ask_model(_model: &str, _system: &str, _prompt: &str) -> Result<ModelReply, String> {
     Err("the sealed box only runs inside OutLayer".into())
+}
+
+/// Fetches NEAR AI's signature for one completion. The signature can take a
+/// moment to be recorded, so this retries briefly; without a matching
+/// signature the answer still stands but carries no receipt.
+#[cfg(target_arch = "wasm32")]
+fn fetch_receipt(model: &str, reply: &ModelReply) -> Option<Receipt> {
+    use std::time::Duration;
+    use wasi_http_client::Client;
+
+    if !valid_chat_id(&reply.chat_id) {
+        return None;
+    }
+    let api_key = std::env::var("NEAR_AI_API_KEY").ok()?;
+    let url = format!("{NEAR_AI_SIGNATURE_URL}/{}?signing_algo=ecdsa", reply.chat_id);
+    for attempt in 0..3 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(1500));
+        }
+        let Ok(response) = Client::new()
+            .get(&url)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .header("Accept", "application/json")
+            .connect_timeout(Duration::from_secs(10))
+            .send()
+        else {
+            continue;
+        };
+        if response.status() != 200 {
+            continue;
+        }
+        let Ok(bytes) = response.body() else { continue };
+        let Ok(value) = serde_json::from_slice::<Value>(&bytes) else { continue };
+        if let Some(receipt) = receipt_from_signature(&value, model, &reply.chat_id, &reply.request_hash, &reply.response_hash) {
+            return Some(receipt);
+        }
+    }
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn fetch_receipt(_model: &str, _reply: &ModelReply) -> Option<Receipt> {
+    None
 }

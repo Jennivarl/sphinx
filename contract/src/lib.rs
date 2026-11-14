@@ -118,6 +118,45 @@ fn asked_key(listing_id: u64, account: &AccountId) -> String {
     format!("{listing_id}:{account}")
 }
 
+/// Receipts live in their own storage slots, next to the question list, so
+/// adding them needed no change to stored questions.
+fn receipt_key(listing_id: u64, index: u32) -> Vec<u8> {
+    format!("receipt:{listing_id}:{index}").into_bytes()
+}
+
+fn is_hex(value: &Value, digits: usize) -> bool {
+    value.as_str().and_then(|s| s.strip_prefix("0x")).is_some_and(|h| {
+        h.len() == digits && h.bytes().all(|b| b.is_ascii_hexdigit())
+    })
+}
+
+fn is_plain_hex(value: &Value, digits: usize) -> bool {
+    value.as_str().is_some_and(|h| h.len() == digits && h.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// Keeps only a well-formed NEAR AI signature receipt from the box's output,
+/// rebuilt field by field so nothing else is ever stored.
+fn clean_receipt(receipt: &Value) -> Option<Value> {
+    let chat_id = receipt["chat_id"].as_str()?;
+    let id_ok = !chat_id.is_empty()
+        && chat_id.len() <= 100
+        && chat_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    let ok = id_ok
+        && is_plain_hex(&receipt["request_hash"], 64)
+        && is_plain_hex(&receipt["response_hash"], 64)
+        && is_hex(&receipt["signature"], 130)
+        && is_hex(&receipt["signing_address"], 40);
+    ok.then(|| {
+        json!({
+            "chat_id": chat_id,
+            "request_hash": receipt["request_hash"],
+            "response_hash": receipt["response_hash"],
+            "signature": receipt["signature"],
+            "signing_address": receipt["signing_address"],
+        })
+    })
+}
+
 fn offers_key(listing_id: u64, account: &AccountId) -> String {
     format!("offer:{listing_id}:{account}")
 }
@@ -299,6 +338,9 @@ impl Sphinx {
                 };
                 q.confidence = v["confidence"].as_u64().unwrap_or(0).min(100) as u8;
                 q.model = v["model"].as_str().map(str::to_string);
+                if let Some(receipt) = clean_receipt(&v["receipt"]) {
+                    env::storage_write(&receipt_key(listing_id, index), receipt.to_string().as_bytes());
+                }
             }
             _ => {
                 q.answer = "failed".into();
@@ -467,6 +509,18 @@ impl Sphinx {
 
     pub fn get_questions(&self, listing_id: u64) -> Vec<Question> {
         self.questions.get(&listing_id).cloned().unwrap_or_default()
+    }
+
+    /// NEAR AI's TEE signature receipt for each question, in question order
+    /// (`null` where an answer has none). Anyone can check a receipt: the
+    /// signer must be the address in the model's NEAR AI attestation report.
+    pub fn get_receipts(&self, listing_id: u64) -> Vec<Option<Value>> {
+        let count = self.questions.get(&listing_id).map_or(0, |list| list.len() as u32);
+        (0..count)
+            .map(|index| {
+                env::storage_read(&receipt_key(listing_id, index)).and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            })
+            .collect()
     }
 
     /// What a buyer must attach on top of their maximum price and the run fee.

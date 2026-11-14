@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { call, returnedValue, view, wallet, type Listing, type Question, type Sale } from "./near";
+import { checkReceipt, type Receipt, type ReceiptCheck } from "./receipt";
 import {
   getOrCreateUnlockKey,
   nearToYocto,
@@ -253,19 +254,22 @@ function Sell({ account, config, signIn }: { account: string | null; config: Con
 function ListingPage({ id, account, signIn }: { id: number; account: string | null; signIn: () => void }) {
   const [listing, setListing] = useState<Listing | null | undefined>(undefined);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [receipts, setReceipts] = useState<(Receipt | null)[]>([]);
   const [left, setLeft] = useState<number | null>(null);
   const [sale, setSale] = useState<Sale | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
 
   const load = useCallback(async () => {
-    const [l, q, s, c] = await Promise.all([
+    const [l, q, s, c, r] = await Promise.all([
       view<Listing | null>("get_listing", { listing_id: id }),
       view<Question[]>("get_questions", { listing_id: id }),
       view<Sale | null>("get_sale", { listing_id: id }),
       view<Config>("get_config"),
+      view<(Receipt | null)[]>("get_receipts", { listing_id: id }).catch(() => []),
     ]);
     setListing(l);
     setQuestions(q);
+    setReceipts(r);
     setSale(s);
     setConfig(c);
     if (account) setLeft(await view<number>("questions_left", { listing_id: id, account_id: account }));
@@ -306,7 +310,7 @@ function ListingPage({ id, account, signIn }: { id: number; account: string | nu
         {listing.price && <div><dt>Sold for</dt><dd>{yoctoToNear(listing.price)} NEAR</dd></div>}
       </dl>
 
-      <Oracle listing={listing} questions={questions} left={left} account={account} isSeller={isSeller} signIn={signIn} onAsked={load} />
+      <Oracle listing={listing} questions={questions} receipts={receipts} left={left} account={account} isSeller={isSeller} signIn={signIn} onAsked={load} />
 
       {listing.status === "Open" && !isSeller && (
         <Offer listing={listing} account={account} config={config} signIn={signIn} onSent={load} />
@@ -328,13 +332,14 @@ function ListingPage({ id, account, signIn }: { id: number; account: string | nu
 function Oracle(props: {
   listing: Listing;
   questions: Question[];
+  receipts: (Receipt | null)[];
   left: number | null;
   account: string | null;
   isSeller: boolean;
   signIn: () => void;
   onAsked: () => Promise<void>;
 }) {
-  const { listing, questions, left, account, isSeller, signIn, onAsked } = props;
+  const { listing, questions, receipts, left, account, isSeller, signIn, onAsked } = props;
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -372,6 +377,7 @@ function Oracle(props: {
               {item.answer === "pending" ? "the box is thinking…" : item.answer === "failed" ? "failed · not counted" : item.answer}
               {(item.answer === "yes" || item.answer === "no") && <small> {confidenceLabel(item.confidence)}</small>}
             </span>
+            {receipts[i] && item.model && <ReceiptBadge model={item.model} receipt={receipts[i]} />}
           </li>
         ))}
       </ol>
@@ -448,6 +454,29 @@ function Offer({ listing, account, config, signIn, onSent }: { listing: Listing;
       )}
       {err && <p className="error">{err}</p>}
     </div>
+  );
+}
+
+const RECEIPT_LABEL: Record<ReceiptCheck, string> = {
+  checking: "checking the AI's signature…",
+  verified: "✓ signed inside NEAR AI's secure hardware",
+  unlisted: "✓ signed by NEAR AI (key since rotated)",
+  "signature-only": "✓ NEAR AI signature valid",
+  invalid: "✗ signature does not check out",
+};
+
+/** Checks, in this browser, that NEAR AI's TEE signed the exchange behind an
+ *  answer and that the signing key is in the model's attestation report. */
+function ReceiptBadge({ model, receipt }: { model: string; receipt: Receipt }) {
+  const [state, setState] = useState<ReceiptCheck>("checking");
+  useEffect(() => {
+    checkReceipt(model, receipt).then(setState);
+  }, [model, receipt]);
+  const short = `${receipt.signing_address.slice(0, 6)}…${receipt.signing_address.slice(-4)}`;
+  return (
+    <small className={`receipt r-${state}`} title={`Model ${model}\nCompletion ${receipt.chat_id}\nSigner ${receipt.signing_address}`}>
+      {RECEIPT_LABEL[state]} · key {short}
+    </small>
   );
 }
 
@@ -560,6 +589,16 @@ function Verify({ config }: { config: Config | null }) {
           <p>
             Questions go to NEAR AI Cloud models that run inside TEEs and publish attestation reports (DeepSeek V4.1 Flash by default).
             The box refuses any other model, so a secret never reaches a third-party API.
+          </p>
+        </li>
+        <li>
+          <h3>Every answer is signed by the AI's secure hardware</h3>
+          <p>
+            For each answer the box keeps the exact bytes it sent to NEAR AI and the exact reply, and fetches NEAR AI's signature over
+            their SHA-256 hashes, made by a key that lives inside the model's TEE. The contract stores that receipt next to the question
+            (<code>get_receipts</code>). This page recovers the signer from the signature and checks it against the key in the model's
+            live attestation report, so you do not have to trust us that a real attested model answered. The hashes reveal nothing about
+            the secret or the question.
           </p>
         </li>
         <li>
