@@ -281,9 +281,19 @@ function ListingRow({ l }: { l: Listing }) {
 
 /* ---------------- Landing: tiles drifting through space around a calm centre ---------------- */
 
-type Tile = { kind: "seal" | "medal" | "box" | "yes" | "no" | "lock" | "price"; x: number; z: number; s: number; d: number; delay: number; rx: number; ry: number; rz: number; hash: string };
+type Tile = {
+  kind: "seal" | "medal" | "box" | "yes" | "no" | "lock" | "price";
+  x: number; ty: number; z: number; s: number; d: number; delay: number;
+  rx: number; ry: number; rz: number; spin: number; blur: number; o: number;
+  sway: number; swayD: number; swayDelay: number; hash: string;
+};
 
-/** A fixed, seeded field of tiles, so the scene is the same on every visit. */
+/**
+ * A fixed, seeded field of tiles, so the scene is the same on every visit.
+ * Depth drives everything at once: near tiles are bigger, sharper and drift a
+ * little faster; far ones are smaller, softer and slower. Each tile keeps a
+ * steady tilt, so nothing tumbles.
+ */
 function makeTiles(count: number, seed: number): Tile[] {
   let t = seed;
   const rnd = () => {
@@ -294,17 +304,26 @@ function makeTiles(count: number, seed: number): Tile[] {
   return Array.from({ length: count }, (_, i) => {
     // Keep the middle third clear for the words.
     const side = i % 2 === 0 ? rnd() * 0.36 : 0.64 + rnd() * 0.36;
+    const depth = rnd();
+    const d = Math.round(64 - depth * 30);
     const hash = Array.from({ length: 64 }, () => Math.floor(rnd() * 16).toString(16)).join("");
     return {
       kind: kinds[i % kinds.length],
       x: side * 100,
-      z: Math.round(-420 + rnd() * 520),
-      s: Math.round(52 + rnd() * 52),
-      d: Math.round(22 + rnd() * 26),
-      delay: -Math.round(rnd() * 48),
-      rx: Math.round(-28 + rnd() * 56),
-      ry: Math.round(-34 + rnd() * 68),
-      rz: Math.round(-30 + rnd() * 60),
+      ty: Math.round(rnd() * 100),
+      z: Math.round(-220 + depth * 220),
+      s: Math.round(44 + depth * 64),
+      d,
+      delay: -Math.round(rnd() * d),
+      rx: Math.round((rnd() - 0.5) * 24),
+      ry: Math.round((rnd() - 0.5) * 30),
+      rz: Math.round((rnd() - 0.5) * 32),
+      spin: Math.round((rnd() - 0.5) * 24),
+      blur: depth < 0.3 ? Math.round((0.3 - depth) * 60) / 10 : 0,
+      o: Math.round((0.55 + depth * 0.45) * 100) / 100,
+      sway: Math.round(6 + rnd() * 12),
+      swayD: Math.round(50 + rnd() * 40) / 10,
+      swayDelay: -Math.round(rnd() * 80) / 10,
       hash,
     };
   });
@@ -336,13 +355,16 @@ function Field({ count, seed }: { count: number; seed: number }) {
       {tiles.map((tile, i) => (
         <span
           key={i}
-          className={`tile tile-${tile.kind}`}
+          className="tile"
           style={{
-            "--x": `${tile.x}%`, "--z": `${tile.z}px`, "--s": `${tile.s}px`, "--d": `${tile.d}s`, "--delay": `${tile.delay}s`,
-            "--rx": `${tile.rx}deg`, "--ry": `${tile.ry}deg`, "--rz": `${tile.rz}deg`,
+            "--x": `${tile.x}%`, "--ty": `${tile.ty}vh`, "--z": `${tile.z}px`, "--s": `${tile.s}px`, "--d": `${tile.d}s`, "--delay": `${tile.delay}s`,
+            "--rx": `${tile.rx}deg`, "--ry": `${tile.ry}deg`, "--rz": `${tile.rz}deg`, "--spin": `${tile.spin}deg`,
+            "--blur": `${tile.blur}px`, "--o": tile.o, "--sway": `${tile.sway}px`, "--sway-d": `${tile.swayD}s`, "--sway-delay": `${tile.swayDelay}s`,
           } as CSSProperties}
         >
-          <TileFace tile={tile} />
+          <span className={`tile-face tile-${tile.kind}`}>
+            <TileFace tile={tile} />
+          </span>
         </span>
       ))}
     </div>
