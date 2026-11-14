@@ -1,0 +1,7 @@
+{
+  "display": { "name": "Sphinx sealed box" },
+  "operations": ["pubkey", "ask", "settle"],
+  "capabilities": { "network": ["cloud-api.near.ai"] },
+  "encryption_keys": [{ "path": "sphinx-box", "caller": "predecessor" }],
+  "author_secrets": { "owner": "7c3bcf93a61a597e5d07547926a3e06e0d4f6d99b12323523234faa53cee9681", "profile": "default" }
+}

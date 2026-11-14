@@ -1,0 +1,31 @@
+[package]
+name = "sphinx-enclave"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.84"
+resolver = "3"
+license = "MIT"
+description = "Sphinx sealed box: answers yes/no questions about a sealed secret and settles fair swaps, inside OutLayer's TEE"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "sphinx-enclave"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+sha2 = "0.10"
+crypto_box = { version = "0.9", features = ["seal"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wit-bindgen = "0.36"
+wasi-http-client = "0.2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

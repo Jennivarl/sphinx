@@ -1,0 +1,27 @@
+{
+  "contractId": "7c3bcf93a61a597e5d07547926a3e06e0d4f6d99b12323523234faa53cee9681",
+  "listingId": 0,
+  "proof": [
+    {
+      "step": "ask 1",
+      "tx": "FK2aEi5QH8KcnspjHgyg2RzyKx5nPt8BRVfs5PjpQH4i",
+      "extra": "yes 100% in 20.8s"
+    },
+    {
+      "step": "ask 2",
+      "tx": "EcDmM7MuActadTsBjzkx7doLgSzrJ6MfYhmMNiDnjk5a",
+      "extra": "no 99% in 15.5s"
+    },
+    {
+      "step": "ask 3",
+      "tx": "4swZJPo1Tzb3QLWxBYzCMpN3BuDjxPXqcLqgHHPfkERP",
+      "extra": "refused 0% in 11.1s"
+    },
+    {
+      "step": "buy (sealed ceiling 0.09)",
+      "tx": "3pJx41e6VhJ77dzf1m2njBdHowdGZZMzzgbyRQoC1ucF",
+      "extra": "Sold at 0.07 NEAR in 12.6s"
+    }
+  ],
+  "match": true
+}

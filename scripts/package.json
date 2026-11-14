@@ -1,0 +1,13 @@
+{
+  "name": "sphinx-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node check.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "libsodium-wrappers": "^0.7.16",
+    "near-api-js": "^5.1.1"
+  }
+}

@@ -1,0 +1,17 @@
+# Private working notes, never committed
+REQUIREMENTS.md
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and builds
+node_modules/
+dist/
+target/
+.next/
+IDEAS.md
+RESEARCH.md
+scripts/ask-input.json
+*.log
