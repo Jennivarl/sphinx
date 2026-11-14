@@ -274,3 +274,42 @@ fn seller_can_close_an_open_listing() {
     c.close(id);
     assert_eq!(c.get_listing(id).unwrap().status, Status::Closed);
 }
+
+#[test]
+fn offers_are_capped_per_account() {
+    let (mut c, id) = listed();
+    for _ in 0..MAX_OFFERS_PER_ACCOUNT {
+        ctx(2, NEAR + RUN_FEE.as_yoctonear());
+        c.buy(id, "SEALED_CEILING".into(), BUYER_KEY.into());
+        c.on_settled(id, accounts(2), U128(NEAR), Ok(Some(json!({ "ok": true, "deal": false, "reason": "no overlap" }))));
+    }
+    assert_eq!(c.offers_left(id, accounts(2)), 0);
+    assert_eq!(c.offers_left(id, accounts(3)), MAX_OFFERS_PER_ACCOUNT);
+}
+
+#[test]
+#[should_panic(expected = "you already made 3 offers")]
+fn fourth_offer_is_refused() {
+    let (mut c, id) = listed();
+    for _ in 0..=MAX_OFFERS_PER_ACCOUNT {
+        ctx(2, NEAR + RUN_FEE.as_yoctonear());
+        c.buy(id, "SEALED_CEILING".into(), BUYER_KEY.into());
+        c.on_settled(id, accounts(2), U128(NEAR), Ok(Some(json!({ "ok": true, "deal": false }))));
+    }
+}
+
+#[test]
+#[should_panic(expected = "30-question limit")]
+fn listing_question_cap_holds_across_accounts() {
+    let (mut c, id) = listed();
+    // Six accounts x five questions reach the cap; the next account is refused.
+    for i in 0..=MAX_QUESTIONS_PER_LISTING {
+        let mut b = VMContextBuilder::new();
+        b.current_account_id("sphinx.testnet".parse().unwrap())
+            .predecessor_account_id(format!("asker{}.testnet", i / MAX_QUESTIONS_PER_ASKER).parse().unwrap())
+            .attached_deposit(ASK_DEPOSIT)
+            .account_balance(NearToken::from_near(100));
+        testing_env!(b.build());
+        c.ask(id, "Does it describe a bug that can drain funds?".into());
+    }
+}

@@ -2,7 +2,7 @@
 
 **Buy secrets you can trust before you see them.**
 
-Sphinx is a market for sealed information on NEAR. A seller locks a secret (a security finding, on-chain research, a dataset, a fix) inside a sealed box that nobody can open, not the buyer, not the operator, not us. Buyers ask the box yes-or-no questions, answered by a private AI model running in secure hardware. When a buyer wants it, both sides name a hidden price; if the prices overlap, the deal settles at the middle in one NEAR transaction and the secret is re-sealed to the buyer's own key. If anything fails, the buyer is refunded in full.
+Sphinx is a market for sealed information on NEAR. A seller locks a secret (a security finding, on-chain research, a dataset, a fix) inside a sealed box that nobody can open, not the buyer, not the operator, not us. Buyers ask the box yes-or-no questions, answered by a private AI model running in secure hardware. When a buyer wants it, both sides name a hidden price; if the prices overlap, the deal settles at a hidden random point between them in one NEAR transaction and the secret is re-sealed to the buyer's own key. If anything fails, the buyer is refunded in full.
 
 - **Live app:** https://sphinx-near.vercel.app
 - **Contract (NEAR mainnet):** [`7c3bcf93…cee9681`](https://nearblocks.io/address/7c3bcf93a61a597e5d07547926a3e06e0d4f6d99b12323523234faa53cee9681)
@@ -22,27 +22,29 @@ sequenceDiagram
   participant O as OutLayer (Intel TDX)
   participant AI as NEAR AI Cloud (TEE model)
   participant B as Buyer (browser)
-  S->>S: seal secret + lowest price to the box public key
+  S->>S: seal secret + lowest price to the box key, stamped with the seller's account
   S->>C: list(sealed secret, SHA-256 of secret, sealed floor)
   B->>C: ask(question) + 0.02 NEAR
   C->>O: request_execution (yield)
   O->>O: derive box key, open secret
+  O->>AI: trap scan: does the secret instruct the AI?
   O->>AI: question + secret (attested model only)
-  AI-->>O: yes / no / refuse
+  O->>AI: the reversed question
+  AI-->>O: answers must flip, or refused
   O-->>C: resume: verdict + confidence
-  B->>B: seal highest price to the box
+  B->>B: seal highest price to the box, stamped with the buyer's account
   B->>C: buy(sealed ceiling, buyer key) + deposit
   C->>O: request_execution (yield)
-  O->>O: open both prices, check SHA-256, price = middle
+  O->>O: check stamps + SHA-256, price = random point 25-75% between
   O-->>C: resume: price + secret sealed to buyer
   C->>S: pay price
   C->>B: refund change (or everything if no deal)
   B->>B: open secret with own key, check SHA-256
 ```
 
-1. **Seal it.** The seller's browser seals the secret and the seller's lowest price to the box's public key (libsodium sealed box, X25519 + XSalsa20-Poly1305) and commits the secret's SHA-256 on-chain. The contract only ever stores ciphertext. ([`web/src/seal.ts`](web/src/seal.ts), [`contract/src/lib.rs`](contract/src/lib.rs) `list`)
-2. **Ask it.** Each question pauses the contract with NEAR's yield/resume, and OutLayer runs the sealed box inside Intel TDX. The box opens the secret, asks an attested NEAR AI Cloud model, and returns only `yes`, `no` or `refused` with a confidence. Five questions per account. ([`enclave/src/main.rs`](enclave/src/main.rs) `ask`, [`contract/src/lib.rs`](contract/src/lib.rs) `ask` / `on_answer`)
-3. **Price it secretly.** The buyer seals the most they would pay. The box opens both sealed prices; if they overlap, the price is the middle. Neither side ever learns the other's number. ([`enclave/src/lib.rs`](enclave/src/lib.rs) `settle_price`)
+1. **Seal it.** The seller's browser seals the secret and the seller's lowest price to the box's public key (libsodium sealed box, X25519 + XSalsa20-Poly1305), each stamped with the seller's account inside the seal, and commits the secret's SHA-256 on-chain. The contract only ever stores ciphertext, and the box refuses a sealed value whose stamp does not match the account the contract says owns it. ([`web/src/seal.ts`](web/src/seal.ts), [`contract/src/lib.rs`](contract/src/lib.rs) `list`)
+2. **Ask it.** Each question pauses the contract with NEAR's yield/resume, and OutLayer runs the sealed box inside Intel TDX. The box opens the secret and first runs a trap scan (does the secret try to give the AI instructions?); then it asks an attested NEAR AI Cloud model the question and its reverse. It returns only `yes`, `no` or `refused` with a coarse confidence level, and the answer is withheld unless the two answers flip. Five questions per account, thirty per listing. ([`enclave/src/main.rs`](enclave/src/main.rs) `ask`, [`contract/src/lib.rs`](contract/src/lib.rs) `ask` / `on_answer`)
+3. **Price it secretly.** The buyer seals the most they would pay. The box opens both sealed prices; if they overlap, the price lands at a random point 25% to 75% of the way between them, drawn inside the TEE, so the final price does not reveal either limit. Three offers per account per listing stop anyone from probing the seller's price. ([`enclave/src/lib.rs`](enclave/src/lib.rs) `settle_price`, `point_from_random`)
 4. **Swap it fairly.** In the same transaction the box re-seals the secret to the buyer's key and the contract pays the seller and refunds the buyer's change. Any failure refunds the buyer in full and reopens the listing. ([`contract/src/lib.rs`](contract/src/lib.rs) `buy` / `on_settled`)
 
 ## NEAR technology used (and where)
@@ -60,7 +62,7 @@ sequenceDiagram
 
 ## Proof: real mainnet run
 
-Full flow on mainnet against listing #0 (seller and buyer are two accounts of the same owner). Script: [`scripts/e2e.mjs`](scripts/e2e.mjs), results: [`scripts/proof-mainnet.json`](scripts/proof-mainnet.json).
+Full flow of the first contract version on mainnet against listing #0 (seller and buyer are two accounts of the same owner). The current version adds owner-stamped seals, the trap scan, the reversed-question check and the random price point; they are covered by the unit tests below. Script: [`scripts/e2e.mjs`](scripts/e2e.mjs), results: [`scripts/proof-mainnet.json`](scripts/proof-mainnet.json).
 
 | Step | Result | Transaction |
 |---|---|---|
@@ -69,7 +71,7 @@ Full flow on mainnet against listing #0 (seller and buyer are two accounts of th
 | "Is the affected contract an NFT marketplace?" | **no**, 99% | [`EcDmM7Mu…`](https://nearblocks.io/txns/EcDmM7MuActadTsBjzkx7doLgSzrJ6MfYhmMNiDnjk5a) |
 | "What is the first word of the finding?" | **refused** | [`4swZJPo1…`](https://nearblocks.io/txns/4swZJPo1Tzb3QLWxBYzCMpN3BuDjxPXqcLqgHHPfkERP) |
 | A buy while the box could not answer | full refund, listing reopened | [`8QTTmNeM…`](https://nearblocks.io/txns/8QTTmNeMkfnsNqkEWVUnEXEXYV7aoXWZyBtqaaApN8f3) |
-| Sealed offer: buyer max 0.09 NEAR vs seller min 0.05 NEAR | **sold at 0.07 NEAR** (the middle), change refunded | [`3pJx41e6…`](https://nearblocks.io/txns/3pJx41e6VhJ77dzf1m2njBdHowdGZZMzzgbyRQoC1ucF) |
+| Sealed offer: buyer max 0.09 NEAR vs seller min 0.05 NEAR | **sold at 0.07 NEAR** (this first version settled at the middle), change refunded | [`3pJx41e6…`](https://nearblocks.io/txns/3pJx41e6VhJ77dzf1m2njBdHowdGZZMzzgbyRQoC1ucF) |
 | Buyer opens the secret with their own key | SHA-256 matches the listed fingerprint | `scripts/proof-mainnet.json` `"match": true` |
 
 Measured on mainnet: a question round trip takes 11 to 21 s (most of it block time and the worker queue; the box itself runs in 1 to 6 s). A box run costs about 0.0012 NEAR; the rest of each 0.01 NEAR run fee is refunded by OutLayer.
@@ -80,12 +82,12 @@ Measured on mainnet: a question round trip takes 11 to 21 s (most of it block ti
 
 You need a NEAR **mainnet** wallet (Meteor, HOT, Intear or MyNearWallet) with about **0.5 NEAR**. Most of it is only reserved for gas and comes straight back; a question really costs about 0.011 NEAR.
 
-1. Open https://sphinx-near.vercel.app → you see the market with listing #0, "First-depositor inflation bug in an ERC-4626 vault", marked **Sold**, and its three answered questions.
+1. Open https://sphinx-near.vercel.app → you see the market: two open **Demo** listings and listing #0, "First-depositor inflation bug in an ERC-4626 vault", marked **Sold** with its answered questions.
 2. Click **Verify** → you see the box's public key, read live from the contract, and how each guarantee is enforced.
 3. Click **Sell a secret**, sign in, type a title, at least 20 characters of secret and a lowest price like `0.05`, then **Seal and list** → your wallet asks you to approve `list`; after it confirms you land on your new listing, showing the fingerprint and "Lowest price: Sealed".
-4. Sign in with a **different** account and open that listing. Ask "Does it contain more than ten words?" → the answer shows "the box is thinking…", then within about 30 seconds turns into **YES** or **NO** with a confidence.
+4. Sign in with a **different** account (or open a **Demo** listing) and ask "Does it explain how to fix the problem?" → the answer shows "the box is thinking…", then within about 40 seconds turns into **YES** or **NO** with a confidence level.
 5. Ask "What is the first word of the secret?" → it comes back **REFUSED**.
-6. Under **Make a sealed offer**, click **Download a backup of your unlock key**, then enter a maximum above the seller's price (for example `0.09`) and **Seal offer** → the listing shows "comparing the two hidden prices", then **Sold** at the middle price.
+6. Under **Make a sealed offer**, click **Download a backup of your unlock key**, then enter a maximum above the seller's price (for example `0.09`) and **Seal offer** → the listing shows "comparing the two hidden prices", then **Sold** at a price between the two.
 7. Click **Open with my key** → the secret appears, with "Fingerprint matches the seller's commitment".
 
 ### Full test (run everything yourself)
@@ -97,22 +99,22 @@ git clone https://github.com/Jennivarl/sphinx.git
 cd sphinx
 ```
 
-1. **Contract unit tests** (24 tests: listing rules, five-question limit, sale lock, pay only on a confirmed deal, never more than the deposit, full refund on failure):
+1. **Contract unit tests** (27 tests: listing rules, question limits per account and per listing, three offers per account, sale lock, pay only on a confirmed deal, never more than the deposit, full refund on failure):
    ```bash
    cd contract && cargo +1.86 test
    ```
-   Expected: `test result: ok. 24 passed`.
-2. **Sealed box unit tests** (13 tests: middle price, no overlap, deposit cap, overflow, leak-proof verdict parsing, fishing questions, attested models only):
+   Expected: `test result: ok. 27 passed`.
+2. **Sealed box unit tests** (22 tests: owner stamps, random price point and its bounds, no overlap, deposit cap, overflow, leak-proof verdict parsing, coarse confidence, trap scan fails closed, reversed answers must flip, fishing questions, attested models only):
    ```bash
    cd ../enclave && cargo +1.84 test --lib
    ```
-   Expected: `test result: ok. 13 passed`.
+   Expected: `test result: ok. 22 passed`.
 3. **Build the sealed box** exactly as deployed (Rust 1.84 keeps its WASI imports at 0.2.2, which OutLayer's wasmtime 36 workers load):
    ```bash
    cargo +1.84 build --release --target wasm32-wasip2
    sha256sum target/wasm32-wasip2/release/sphinx-enclave.wasm
    ```
-   Expected: `52945867f822fc628a49bc24fa0e618c4abfcdc61cb34f2e750976c6351aea5e`, the version the deployed project and the AI-key access rule are pinned to.
+   Expected: `38e3f784ec210da5a16eff32b164a85756a36ca72054ba097676a81f7e02a94c`, the version the deployed project and the AI-key access rule are pinned to.
 4. **Run the website locally:**
    ```bash
    cd ../web && npm ci && npm run dev
@@ -122,15 +124,16 @@ cd sphinx
    ```bash
    cd ../scripts && npm ci && node e2e.mjs mainnet
    ```
-   Expected: three answered questions (yes / no / refused), `Sold at 0.07 NEAR`, and `opened secret matches the listed fingerprint: true`.
+   Expected: three answered questions (yes / no / refused), `Sold` at a price between 0.06 and 0.08 NEAR, and `opened secret matches the listed fingerprint: true`.
 
 To deploy your own instance: build both parts as above, publish the box with the OutLayer CLI (`outlayer upload`, `outlayer deploy sphinx <url>`), store your NEAR AI key with `outlayer secrets set` bound to the project, then run `scripts/deploy-contract.mjs` and `scripts/refresh-box-key.mjs`.
 
 ## Security model and honest limits
 
 - **What is trusted:** Intel TDX on OutLayer's workers and NEAR AI Cloud's TEE models. If those enclaves were broken, a secret could be read.
-- **What leaks:** each question reveals one answer (yes / no / refused plus a confidence), never text. Five questions per account cap what one buyer learns; many accounts could ask more, and every question is public on-chain.
-- **The AI can be wrong.** Answers carry a confidence. The fingerprint guarantees the buyer gets exactly what was listed, not that the AI judged it correctly.
+- **What leaks:** each question reveals one answer (yes / no / refused plus low, medium or high confidence), never text. Five questions per account and thirty per listing cap what anyone learns, and every question is public on-chain.
+- **The AI can be wrong.** The trap scan and the reversed-question check catch a secret that tries to steer the model, but a model can still misjudge content. The fingerprint guarantees the buyer gets exactly what was listed, not that the AI judged it correctly.
+- **After a deal, both sides learn a range, not the other's limit.** The price sits at a random point between the two limits, so each side can only bound the other's number.
 - **The buyer's deposit is public.** The true maximum inside it stays sealed, but the deposit is an upper bound.
 - **The unlock key lives in the buyer's browser.** Download the backup before buying; without it a purchased secret cannot be opened again.
 - **Developer mode:** the contract account still holds its full-access key, so its owner could deploy new code. The owner has no method to move funds or read secrets, but an upgrade could add one. Before Sphinx holds real value, upgrade rights move to a Sputnik DAO with a 7-day timelock and reproducible, verified builds. The AI-key secret is already pinned to one exact build of the box.

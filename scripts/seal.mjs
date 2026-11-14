@@ -14,6 +14,11 @@ export function sealTo(boxPublicKeyB64, plaintext) {
   return sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL);
 }
 
+/** Seals `value` as owned by `account`: the box only opens it for that account. */
+export function sealFor(boxPublicKeyB64, account, value) {
+  return sealTo(boxPublicKeyB64, JSON.stringify({ v: 1, for: account, data: value }));
+}
+
 export function newKeyPair() {
   const kp = sodium.crypto_box_keypair();
   return {

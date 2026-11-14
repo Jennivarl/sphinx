@@ -16,6 +16,10 @@ use near_sdk::{
 };
 
 pub const MAX_QUESTIONS_PER_ASKER: u32 = 5;
+/// Caps what many accounts together can learn about one secret.
+pub const MAX_QUESTIONS_PER_LISTING: u32 = 30;
+/// Caps how far one account can probe the seller's sealed lowest price.
+pub const MAX_OFFERS_PER_ACCOUNT: u32 = 3;
 /// Forwarded to OutLayer for each sealed-box run. OutLayer refunds what the run
 /// does not use to the payer (the asker or buyer).
 pub const RUN_FEE: NearToken = NearToken::from_millinear(10);
@@ -109,6 +113,10 @@ fn event(name: &str, data: Value) {
 
 fn asked_key(listing_id: u64, account: &AccountId) -> String {
     format!("{listing_id}:{account}")
+}
+
+fn offers_key(listing_id: u64, account: &AccountId) -> String {
+    format!("offer:{listing_id}:{account}")
 }
 
 #[near]
@@ -234,6 +242,7 @@ impl Sphinx {
         let mut listing = self.listings.get(&listing_id).cloned().expect("no such listing");
         require!(listing.status == Status::Open, "listing is not open");
         require!(asker != listing.seller, "sellers cannot question their own secret");
+        require!(listing.questions < MAX_QUESTIONS_PER_LISTING, "this listing has reached its 30-question limit");
         require!(env::attached_deposit() >= ASK_DEPOSIT, "attach 0.02 NEAR to ask");
         let q = question.trim().to_string();
         require!(q.chars().count() >= 8 && q.chars().count() <= 280, "question must be 8-280 characters");
@@ -256,12 +265,13 @@ impl Sphinx {
         self.questions.insert(listing_id, list);
         listing.questions += 1;
         let title = listing.title.clone();
+        let seller = listing.seller.clone();
         let sealed_secret = listing.sealed_secret.clone();
         self.listings.insert(listing_id, listing);
 
         let run_deposit = env::attached_deposit().saturating_sub(QUESTION_STORAGE);
         self.run_box(
-            json!({ "op": "ask", "title": title, "sealed_secret": sealed_secret, "question": q }),
+            json!({ "op": "ask", "title": title, "seller": seller, "sealed_secret": sealed_secret, "question": q }),
             asker,
             run_deposit,
         )
@@ -319,10 +329,16 @@ impl Sphinx {
         let attached = env::attached_deposit();
         require!(attached > RUN_FEE, "attach your maximum price plus 0.01 NEAR");
         let escrow = attached.saturating_sub(RUN_FEE);
+        let key = offers_key(listing_id, &buyer);
+        let offers = self.asked.get(&key).copied().unwrap_or(0);
+        require!(offers < MAX_OFFERS_PER_ACCOUNT, "you already made 3 offers on this listing");
+        self.asked.insert(key, offers + 1);
 
         listing.status = Status::Settling;
         let input = json!({
             "op": "settle",
+            "seller": listing.seller,
+            "buyer": buyer,
             "sealed_secret": listing.sealed_secret,
             "secret_hash": listing.secret_hash,
             "sealed_floor": listing.sealed_floor,
@@ -435,6 +451,10 @@ impl Sphinx {
 
     pub fn get_questions(&self, listing_id: u64) -> Vec<Question> {
         self.questions.get(&listing_id).cloned().unwrap_or_default()
+    }
+
+    pub fn offers_left(&self, listing_id: u64, account_id: AccountId) -> u32 {
+        MAX_OFFERS_PER_ACCOUNT - self.asked.get(&offers_key(listing_id, &account_id)).copied().unwrap_or(0)
     }
 
     pub fn questions_left(&self, listing_id: u64, account_id: AccountId) -> u32 {

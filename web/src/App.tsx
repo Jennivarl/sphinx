@@ -6,7 +6,7 @@ import {
   openSealed,
   ready,
   restoreUnlockKey,
-  sealTo,
+  sealFor,
   sha256Hex,
   yoctoToNear,
 } from "./seal";
@@ -112,7 +112,7 @@ function Market() {
 
   useEffect(() => {
     view<Listing[]>("get_listings", { limit: 50 })
-      .then(setItems)
+      .then((all) => setItems(all.filter((l) => l.status !== "Closed")))
       .catch((e) => setError(String(e.message ?? e)));
   }, []);
 
@@ -123,7 +123,7 @@ function Market() {
         <p>
           Sellers lock research, findings and fixes inside a sealed box that no one can open, not even us.
           Buyers ask it yes-or-no questions, answered by a private AI running in secure hardware.
-          Then both sides name a hidden price, and the deal settles in the middle, in one transaction.
+          Then both sides name a hidden price, and the deal settles at a hidden point between them, in one transaction.
         </p>
         <div className="row">
           <a className="button" href="#/sell">Seal a secret</a>
@@ -192,8 +192,8 @@ function Sell({ account, config, signIn }: { account: string | null; config: Con
     }
     setBusy(true);
     try {
-      const sealedSecret = sealTo(config.box_public_key, secret);
-      const sealedFloor = sealTo(config.box_public_key, floorYocto);
+      const sealedSecret = sealFor(config.box_public_key, account, secret);
+      const sealedFloor = sealFor(config.box_public_key, account, floorYocto);
       const bytes = title.length + pitch.length + category.length + sealedSecret.length + sealedFloor.length + 64 + 600;
       // 1e19 yoctoNEAR per byte of storage, plus 30% headroom; the contract refunds what it does not use.
       const deposit = ((BigInt(bytes) * 10n ** 19n * 13n) / 10n).toString();
@@ -314,7 +314,7 @@ function ListingPage({ id, account, signIn }: { id: number; account: string | nu
       {listing.status === "Settling" && (
         <div className="panel settling">
           <div className="pulse" />
-          <p>The sealed box is comparing the two hidden prices. If they overlap, the seller is paid the middle price and the buyer gets the change back. Otherwise everything is refunded.</p>
+          <p>The sealed box is comparing the two hidden prices. If they overlap, the seller is paid a price at a hidden point between them and the buyer gets the change back. Otherwise everything is refunded.</p>
         </div>
       )}
       {isBuyer && sale && <Unlock sale={sale} listing={listing} account={account!} />}
@@ -359,8 +359,9 @@ function Oracle(props: {
     <div className="panel oracle">
       <h2>Ask the Sphinx</h2>
       <p className="muted">
-        A private model inside secure hardware reads the sealed secret and answers only yes, no, or refused, with a confidence score.
-        Five questions per account. Each costs 0.02 NEAR; the unused part of the run fee is refunded.
+        A private model inside secure hardware reads the sealed secret and answers only yes, no, or refused, with a confidence level.
+        Every answer must survive the reversed question, and a secret that tries to steer the AI is never answered.
+        Five questions per account, thirty per listing. Each costs 0.02 NEAR; the unused part of the run fee is refunded.
       </p>
       <ol className="qa">
         {questions.length === 0 && <li className="muted">No questions yet.</li>}
@@ -369,7 +370,7 @@ function Oracle(props: {
             <span className="q">{item.question}</span>
             <span className={`verdict v-${item.answer}`}>
               {item.answer === "pending" ? "the box is thinking…" : item.answer === "failed" ? "failed · not counted" : item.answer}
-              {(item.answer === "yes" || item.answer === "no") && <small> {item.confidence}%</small>}
+              {(item.answer === "yes" || item.answer === "no") && <small> {confidenceLabel(item.confidence)}</small>}
             </span>
           </li>
         ))}
@@ -403,7 +404,7 @@ function Offer({ listing, account, config, signIn, onSent }: { listing: Listing;
     setBusy(true);
     try {
       const key = getOrCreateUnlockKey(account);
-      const sealedCeiling = sealTo(config.box_public_key, maxYocto);
+      const sealedCeiling = sealFor(config.box_public_key, account, maxYocto);
       const deposit = (BigInt(maxYocto) + BigInt(RUN_FEE)).toString();
       await call("buy", { listing_id: listing.id, sealed_ceiling: sealedCeiling, buyer_public_key: key.publicKey }, deposit);
       await onSent();
@@ -419,7 +420,8 @@ function Offer({ listing, account, config, signIn, onSent }: { listing: Listing;
       <h2>Make a sealed offer</h2>
       <p className="muted">
         Enter the most you would pay. It is sealed to the box; the seller never sees it. If it is at least the seller's sealed lowest price,
-        you pay exactly the middle of the two and get the rest back in the same transaction. If not, you are refunded in full and nobody learns either number.
+        you pay a price at a hidden random point between the two (25% to 75% of the way up) and get the rest back in the same transaction.
+        If not, you are refunded in full and nobody learns either number. Three offers per account.
       </p>
       <div className="ask">
         <input value={max} inputMode="decimal" onChange={(e) => setMax(e.target.value)} placeholder="Most you would pay, in NEAR" />
@@ -435,6 +437,10 @@ function Offer({ listing, account, config, signIn, onSent }: { listing: Listing;
       {err && <p className="error">{err}</p>}
     </div>
   );
+}
+
+function confidenceLabel(confidence: number) {
+  return confidence >= 100 ? "high confidence" : confidence >= 70 ? "medium confidence" : "low confidence";
 }
 
 function downloadUnlockKey(account: string) {
@@ -530,6 +536,14 @@ function Verify({ config }: { config: Config | null }) {
           <a href={`${OUTLAYER_APP}/executions`} target="_blank" rel="noreferrer">Open OutLayer executions →</a>
         </li>
         <li>
+          <h3>A sealed value only works where it was made</h3>
+          <p>
+            Every secret and every hidden price is sealed together with its owner's account. The box opens a value only for the account the
+            contract says owns it, so a sealed secret copied into someone else's listing, or a hidden price copied into someone else's offer,
+            is refused.
+          </p>
+        </li>
+        <li>
           <h3>Only attested models ever see a secret</h3>
           <p>
             Questions go to NEAR AI Cloud models that run inside TEEs and publish attestation reports (DeepSeek V4.1 Flash by default).
@@ -539,15 +553,23 @@ function Verify({ config }: { config: Config | null }) {
         <li>
           <h3>Nothing but yes, no or refused comes out</h3>
           <p>
-            The box turns the model's reply into one of three words and a number. Anything else becomes "refused", so even a tricked
-            model cannot leak text. Five questions per account cap what any buyer can learn.
+            The box turns the model's reply into yes, no or refused plus a coarse confidence level (low, medium or high). Anything else becomes
+            "refused", so even a tricked model cannot leak text. Five questions per account and thirty per listing cap what anyone can learn.
+          </p>
+        </li>
+        <li>
+          <h3>Answers have to hold up</h3>
+          <p>
+            Before answering, the box checks whether the secret tries to give the AI instructions, and refuses if it does. Every question is
+            then asked twice, once reversed: if the two answers do not flip, the answer is withheld. A seller cannot plant "always say yes".
           </p>
         </li>
         <li>
           <h3>The swap is one transaction</h3>
           <p>
-            The contract pauses, the box opens both sealed prices and re-seals the secret to the buyer, and the contract resumes: it pays
-            the seller and refunds the buyer's change, or refunds everything. The buyer checks the secret against the listed fingerprint.
+            The contract pauses, the box opens both sealed prices, picks a random point between them (25% to 75% of the way up, so the price
+            does not reveal either limit) and re-seals the secret to the buyer, and the contract resumes: it pays the seller and refunds the
+            buyer's change, or refunds everything. Each account gets three offers per listing. The buyer checks the secret against the listed fingerprint.
           </p>
         </li>
       </ol>

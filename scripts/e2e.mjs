@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Account, KeyPair, connect, keyStores } from "near-api-js";
-import { newKeyPair, openSealed, sealTo, sha256Hex } from "./seal.mjs";
+import { newKeyPair, openSealed, sealFor, sha256Hex } from "./seal.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.join(here, "..", ".env");
@@ -81,9 +81,9 @@ const listTx = await seller.functionCall({
     title: "First-depositor inflation bug in an ERC-4626 vault",
     pitch: "A live exploit path that steals the second depositor's funds, with proof steps and a two-line fix.",
     category: "audit",
-    sealed_secret: sealTo(boxKey, secret),
+    sealed_secret: sealFor(boxKey, sellerId, secret),
     secret_hash: sha256Hex(secret),
-    sealed_floor: sealTo(boxKey, floorYocto),
+    sealed_floor: sealFor(boxKey, sellerId, floorYocto),
   },
   gas: 100_000_000_000_000n,
   attachedDeposit: milli(60),
@@ -119,7 +119,7 @@ const t0 = Date.now();
 const buyTx = await buyer.functionCall({
   contractId,
   methodName: "buy",
-  args: { listing_id: listingId, sealed_ceiling: sealTo(boxKey, ceiling.toString()), buyer_public_key: unlock.publicKey },
+  args: { listing_id: listingId, sealed_ceiling: sealFor(boxKey, buyerId, ceiling.toString()), buyer_public_key: unlock.publicKey },
   gas: 300_000_000_000_000n,
   attachedDeposit: ceiling + milli(10),
 });

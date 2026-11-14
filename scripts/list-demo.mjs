@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Account, KeyPair, connect, keyStores } from "near-api-js";
-import { sealTo, sha256Hex } from "./seal.mjs";
+import { sealFor, sha256Hex } from "./seal.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(here, "..", ".env") });
@@ -61,9 +61,9 @@ for (const d of demos) {
       title: d.title,
       pitch: d.pitch,
       category: d.category,
-      sealed_secret: sealTo(boxKey, d.secret),
+      sealed_secret: sealFor(boxKey, accountId, d.secret),
       secret_hash: sha256Hex(d.secret),
-      sealed_floor: sealTo(boxKey, milli(d.floorMilli).toString()),
+      sealed_floor: sealFor(boxKey, accountId, milli(d.floorMilli).toString()),
     },
     gas: 100_000_000_000_000n,
     attachedDeposit: milli(60),

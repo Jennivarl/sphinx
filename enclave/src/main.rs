@@ -2,15 +2,20 @@
 //!
 //! Reads one JSON request on stdin and prints one JSON reply on stdout:
 //!   {"op":"pubkey"}                                      -> the box's public key
-//!   {"op":"ask", title, sealed_secret, question}         -> yes / no / refused + confidence
-//!   {"op":"settle", sealed_secret, secret_hash, sealed_floor, sealed_ceiling,
-//!                   deposit, buyer_public_key}           -> deal price + secret sealed to the buyer
+//!   {"op":"ask", title, seller, sealed_secret, question} -> yes / no / refused + confidence level
+//!   {"op":"settle", seller, buyer, sealed_secret, secret_hash, sealed_floor,
+//!                   sealed_ceiling, deposit, buyer_public_key} -> deal price + secret sealed to the buyer
+//!
+//! Sealed values are envelopes stamped with their owner's account; the contract
+//! supplies `seller` and `buyer` from its own state, and the box refuses any
+//! envelope that does not belong to them.
 //!
 //! The box's private key is derived inside the TEE from an OutLayer encryption
 //! key bound to this project and to the calling contract, so nobody (not the
 //! seller, the buyer, the operator or us) ever holds it.
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use crypto_box::aead::rand_core::RngCore;
 use crypto_box::{aead::OsRng, PublicKey, SecretKey};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -39,11 +44,14 @@ enum Request {
     Pubkey,
     Ask {
         title: String,
+        seller: String,
         sealed_secret: String,
         question: String,
         model: Option<String>,
     },
     Settle {
+        seller: String,
+        buyer: String,
         sealed_secret: String,
         secret_hash: String,
         sealed_floor: String,
@@ -70,35 +78,58 @@ fn handle(input: &str) -> Result<Value, String> {
             "ok": true,
             "public_key": B64.encode(secret_key.public_key().as_bytes()),
         })),
-        Request::Ask { title, sealed_secret, question, model } => {
+        Request::Ask { title, seller, sealed_secret, question, model } => {
             if let Err(reason) = check_question(&question) {
                 return Ok(json!({ "ok": true, "answer": "refused", "confidence": 0, "reason": reason }));
             }
             let model = choose_model(model.as_deref())?;
-            let secret = open(&secret_key, &sealed_secret)?;
-            let secret = String::from_utf8(secret).map_err(|_| "secret is not text".to_string())?;
-            let reply = ask_model(model, &user_prompt(&title, &secret, &question))?;
-            let verdict = parse_verdict(&reply);
+            let secret = open_for(&secret_key, &sealed_secret, &seller)?;
+
+            // 1. Trap scan: a secret that tries to steer the judge is never answered.
+            let scan = ask_model(model, TRAP_SCAN_PROMPT, &trap_scan_prompt(&secret))?;
+            if parse_trap_scan(&scan) {
+                return Ok(json!({
+                    "ok": true, "answer": "refused", "confidence": 0, "model": model,
+                    "reason": "the secret contains instructions aimed at the AI",
+                }));
+            }
+
+            // 2. The question and its opposite must get opposite answers.
+            let verdict = parse_verdict(&ask_model(model, SYSTEM_PROMPT, &user_prompt(&title, &secret, &question))?);
+            if verdict.answer == Answer::Refused {
+                return Ok(json!({ "ok": true, "answer": "refused", "confidence": 0, "model": model }));
+            }
+            let reversed = user_prompt(&title, &secret, &opposite_question(&question));
+            let opposite = parse_verdict(&ask_model(model, SYSTEM_PROMPT, &reversed)?);
+            if !consistent(verdict.answer, opposite.answer) {
+                return Ok(json!({
+                    "ok": true, "answer": "refused", "confidence": 0, "model": model,
+                    "reason": "the answer did not hold up when the question was reversed",
+                }));
+            }
             Ok(json!({
                 "ok": true,
                 "answer": verdict.answer,
-                "confidence": verdict.confidence,
+                "confidence": bucket_confidence(verdict.confidence.min(opposite.confidence)),
                 "model": model,
             }))
         }
-        Request::Settle { sealed_secret, secret_hash, sealed_floor, sealed_ceiling, deposit, buyer_public_key } => {
-            let secret = open(&secret_key, &sealed_secret)?;
-            if sha256_hex(&secret) != secret_hash.to_lowercase() {
+        Request::Settle { seller, buyer, sealed_secret, secret_hash, sealed_floor, sealed_ceiling, deposit, buyer_public_key } => {
+            let secret = open_for(&secret_key, &sealed_secret, &seller)?;
+            if sha256_hex(secret.as_bytes()) != secret_hash.to_lowercase() {
                 return Ok(json!({ "ok": true, "deal": false, "reason": "secret does not match the seller's committed hash" }));
             }
-            let floor = parse_amount(&String::from_utf8(open(&secret_key, &sealed_floor)?).map_err(|_| "bad floor")?)?;
-            let ceiling = parse_amount(&String::from_utf8(open(&secret_key, &sealed_ceiling)?).map_err(|_| "bad ceiling")?)?;
+            let floor = parse_amount(&open_for(&secret_key, &sealed_floor, &seller)?)?;
+            let ceiling = parse_amount(&open_for(&secret_key, &sealed_ceiling, &buyer)?)?;
             let deposit = parse_amount(&deposit)?;
-            match settle_price(floor, ceiling, deposit) {
+            let mut random = [0u8; 2];
+            OsRng.fill_bytes(&mut random);
+            let point = point_from_random(u16::from_le_bytes(random));
+            match settle_price(floor, ceiling, deposit, point) {
                 None => Ok(json!({ "ok": true, "deal": false, "reason": "the sealed limits do not overlap" })),
                 Some(price) => {
                     let buyer_key = public_key_from_b64(&buyer_public_key)?;
-                    let for_buyer = buyer_key.seal(&mut OsRng, &secret).map_err(|_| "could not seal for buyer")?;
+                    let for_buyer = buyer_key.seal(&mut OsRng, secret.as_bytes()).map_err(|_| "could not seal for buyer")?;
                     Ok(json!({
                         "ok": true,
                         "deal": true,
@@ -114,6 +145,11 @@ fn handle(input: &str) -> Result<Value, String> {
 fn open(secret_key: &SecretKey, sealed_b64: &str) -> Result<Vec<u8>, String> {
     let sealed = B64.decode(sealed_b64.trim()).map_err(|_| "sealed value is not base64".to_string())?;
     secret_key.unseal(&sealed).map_err(|_| "sealed value was not locked to this box".to_string())
+}
+
+/// Opens a sealed envelope and returns its value only if it belongs to `owner`.
+fn open_for(secret_key: &SecretKey, sealed_b64: &str, owner: &str) -> Result<String, String> {
+    open_envelope(&open(secret_key, sealed_b64)?, owner)
 }
 
 fn public_key_from_b64(text: &str) -> Result<PublicKey, String> {
@@ -135,7 +171,7 @@ fn box_secret_key() -> Result<SecretKey, String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn ask_model(model: &str, prompt: &str) -> Result<String, String> {
+fn ask_model(model: &str, system: &str, prompt: &str) -> Result<String, String> {
     use std::time::Duration;
     use wasi_http_client::Client;
 
@@ -145,7 +181,7 @@ fn ask_model(model: &str, prompt: &str) -> Result<String, String> {
         "temperature": 0,
         "max_tokens": MAX_TOKENS,
         "messages": [
-            { "role": "system", "content": SYSTEM_PROMPT },
+            { "role": "system", "content": system },
             { "role": "user", "content": prompt },
         ],
     })
@@ -174,6 +210,6 @@ fn ask_model(model: &str, prompt: &str) -> Result<String, String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn ask_model(_model: &str, _prompt: &str) -> Result<String, String> {
+fn ask_model(_model: &str, _system: &str, _prompt: &str) -> Result<String, String> {
     Err("the sealed box only runs inside OutLayer".into())
 }

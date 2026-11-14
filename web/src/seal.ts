@@ -14,6 +14,12 @@ export function sealTo(boxPublicKeyB64: string, plaintext: string): string {
   return sodium.to_base64(sodium.crypto_box_seal(sodium.from_string(plaintext), pk), B64());
 }
 
+/** Seals `value` as owned by `account`: the box only opens it for that account,
+ *  so a sealed value copied into another listing or offer is useless. */
+export function sealFor(boxPublicKeyB64: string, account: string, value: string): string {
+  return sealTo(boxPublicKeyB64, JSON.stringify({ v: 1, for: account, data: value }));
+}
+
 export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
