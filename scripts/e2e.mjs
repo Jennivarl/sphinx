@@ -115,13 +115,14 @@ for (const [i, question] of questions.entries()) {
 // 3. Buyer makes a sealed offer: ceiling 0.09 NEAR, so the middle price is 0.07 NEAR.
 const unlock = newKeyPair();
 const ceiling = milli(90);
+const storage = BigInt(await view("sale_storage", { listing_id: listingId }));
 const t0 = Date.now();
 const buyTx = await buyer.functionCall({
   contractId,
   methodName: "buy",
   args: { listing_id: listingId, sealed_ceiling: sealFor(boxKey, buyerId, ceiling.toString()), buyer_public_key: unlock.publicKey },
   gas: 300_000_000_000_000n,
-  attachedDeposit: ceiling + milli(10),
+  attachedDeposit: ceiling + milli(10) + storage,
 });
 const listing = await view("get_listing", { listing_id: listingId });
 log("buy (sealed ceiling 0.09)", buyTx.transaction.hash, `${listing.status} at ${Number(BigInt(listing.price ?? 0) * 1000n / NEAR) / 1000} NEAR in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
