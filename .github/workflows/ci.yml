@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  contract:
+    name: Contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.86
+      - run: cargo test --locked
+        working-directory: contract
+
+  enclave:
+    name: Sealed box tests and wasm build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.84
+        with:
+          targets: wasm32-wasip2
+      - run: cargo test --lib --locked
+        working-directory: enclave
+      - run: cargo build --release --locked --target wasm32-wasip2
+        working-directory: enclave
+
+  web:
+    name: Web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npx tsc -b && npx vite build
+        working-directory: web

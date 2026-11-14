@@ -1,7 +1,8 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
-// https://vite.dev/config/
+// Relative base so the same build works on GitHub Pages (/sphinx/) and on a custom domain (/).
 export default defineConfig({
+  base: "./",
   plugins: [react()],
-})
+});
