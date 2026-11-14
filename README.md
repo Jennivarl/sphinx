@@ -76,6 +76,8 @@ The contract and sealed box (build `38e3f784…`, the release before signed rece
 | Sealed offer: buyer max 0.09 NEAR vs seller min 0.05 NEAR | **sold at 0.067516 NEAR**, a random point 44% of the way between the two limits; change refunded | [`39wzsmv8…`](https://nearblocks.io/txns/39wzsmv8eDTLyrdR2h6yusm1NKKPguxXiqvvjEs6JkwG) |
 | Buyer opens the secret with their own key | SHA-256 matches the listed fingerprint | `scripts/proof-mainnet.json` `"match": true` |
 | **Current release (`35bbb3e7…`), signed receipts:** a user's own wallet (varl999.near) asks demo listing #4 "Does the secret explain how to fix the problem?" | **yes**, high confidence; receipt signer `0xfe00…337e` matches and is listed in the model's live NEAR AI attestation report (`node verify-answers.mjs 4`) | [`6bvtByiS…`](https://nearblocks.io/txns/6bvtByiSSZHVj6Gu3yr3VzQfVAmqnA9acdTCaCS1d1b) |
+| **An AI agent through the Sphinx MCP server** (`agent/mcp.mjs`, its own account, offer limit 0.1 NEAR) asks demo listing #4 "Is the secret about keeping payments private?" | **yes**, high confidence, receipt **verified** against NEAR AI's attestation report | [`tQaKo2Sa…`](https://nearblocks.io/txns/tQaKo2SaQMfBccAZr6unRU7mDMsVcdhURieENpPGzie) |
+| The agent's sealed offer: max 0.06 NEAR vs seller min 0.04 NEAR | **bought at 0.045326 NEAR**, a random point 27% of the way between the limits; `open_secret` returns the text with `fingerprintMatches: true` | [`2tftuwV4…`](https://nearblocks.io/txns/2tftuwV4aySsfwVdxCVkjBKmuvCQXyXaDd8RiGb5t3Kj) |
 | Earlier run (first contract version): a buy while the box could not answer | full refund, listing reopened | [`8QTTmNeM…`](https://nearblocks.io/txns/8QTTmNeMkfnsNqkEWVUnEXEXYV7aoXWZyBtqaaApN8f3) |
 
 Measured on mainnet: a question round trip takes 10 to 22 s; with the trap scan and the reversed question the box itself runs in 10 to 13 s (three model calls), a refused fishing question or a settlement in about 1 s. A box run costs 0.001 to 0.0023 NEAR; the rest of each 0.01 NEAR run fee is refunded by OutLayer.
@@ -86,7 +88,7 @@ Measured on mainnet: a question round trip takes 10 to 22 s; with the trap scan 
 
 You need a NEAR **mainnet** wallet (Meteor, HOT, Intear or MyNearWallet) with about **0.5 NEAR**. Most of it is only reserved for gas and comes straight back; a question really costs about 0.011 NEAR.
 
-1. Open https://sphinx-near.vercel.app → you see the market: an open **Demo** listing, and listings #0 and #3 marked **Sold** with their answered questions (the proof runs above).
+1. Open https://sphinx-near.vercel.app → you see the market: two open **Demo** listings (#5 and #6); the sold proof listings (#0, #3, #4) stay reachable at `#/s/<number>` with their answered questions.
 2. Click **Verify** → you see the box's public key, read live from the contract, and how each guarantee is enforced.
 3. Click **Sell a secret**, sign in, type a title, at least 20 characters of secret and a lowest price like `0.05`, then **Seal and list** → your wallet asks you to approve `list`; after it confirms you land on your new listing, showing the fingerprint and "Lowest price: Sealed".
 4. Sign in with a **different** account (or open a **Demo** listing) and ask "Does it explain how to fix the problem?" → the answer shows "the box is thinking…", then within about 40 seconds turns into **YES** or **NO** with a confidence level, and a green line "✓ signed inside NEAR AI's secure hardware" that your browser checked against NEAR AI's attestation report.
@@ -182,9 +184,9 @@ Prerequisites: Node.js 22+. Browsing needs no wallet.
        "env": { "SPHINX_ACCOUNT_ID": "your-agent.near", "SPHINX_PRIVATE_KEY": "ed25519:...", "SPHINX_MAX_OFFER_NEAR": "0.2" } } } }
    ```
    (Leave out `env` to browse only.)
-3. Ask your agent: "List the sealed secrets on Sphinx and show me listing 4 with its receipts." → it calls `list_secrets` and `get_secret`; listing 4's answer shows `"receipt": { "status": "verified", "signer": "0xfe00…337e" }`.
-4. With `SPHINX_ACCOUNT_ID` and `SPHINX_PRIVATE_KEY` set for an account holding about 0.5 NEAR (most of it is only held for gas while a call runs), ask: "Ask Sphinx listing 4 whether it mentions NEAR Intents, then offer 0.06 NEAR if the answer is yes, and open it." → `ask_secret` returns yes or no with a verified receipt; `make_offer` returns `bought` with a price between 0.045 and 0.055 NEAR; `open_secret` returns the text with `"fingerprintMatches": true`.
-5. Try the limit: "Offer 5 NEAR for listing 4." → refused: `above this agent's limit of 0.2 NEAR`, nothing signed.
+3. Ask your agent: "List the sealed secrets on Sphinx and show me listing 4 with its receipts." → it calls `list_secrets` (the open demos #5 and #6) and `get_secret`; listing 4's yes answers show `"receipt": { "status": "verified", "signer": "0xfe00…337e" }`.
+4. With `SPHINX_ACCOUNT_ID` and `SPHINX_PRIVATE_KEY` set for an account holding about 0.5 NEAR (most of it is only held for gas while a call runs), ask: "Ask Sphinx listing 6 whether the secret is about keeping payments private, then offer 0.06 NEAR if the answer is yes, and open it." → `ask_secret` returns yes with a verified receipt; `make_offer` returns `bought` with a price between 0.045 and 0.055 NEAR; `open_secret` returns the text with `"fingerprintMatches": true`. (If someone bought #6 first, pick any open listing from `list_secrets`.)
+5. Try the limit: "Offer 5 NEAR for listing 5." → refused: `above this agent's limit of 0.2 NEAR`, nothing signed.
 
 ## Business
 
