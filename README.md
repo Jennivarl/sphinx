@@ -4,6 +4,7 @@
 
 Sphinx is a market for sealed information on NEAR. A seller locks a secret (a security finding, on-chain research, a dataset, a fix) inside a sealed box that nobody can open, not the buyer, not the operator, not us. Buyers ask the box yes-or-no questions, answered by a private AI model running in secure hardware. When a buyer wants it, both sides name a hidden price; if the prices overlap, the deal settles at the middle in one NEAR transaction and the secret is re-sealed to the buyer's own key. If anything fails, the buyer is refunded in full.
 
+- **Live app:** https://sphinx-near.vercel.app
 - **Contract (NEAR mainnet):** [`7c3bcf93…cee9681`](https://nearblocks.io/address/7c3bcf93a61a597e5d07547926a3e06e0d4f6d99b12323523234faa53cee9681)
 - **Sealed box (OutLayer mainnet project):** `7c3bcf93a61a597e5d07547926a3e06e0d4f6d99b12323523234faa53cee9681/sphinx`
 - **Tracks:** Privacy & Private AI, Agent Economy, AI Security & Defense, Open Innovation
@@ -79,7 +80,7 @@ Measured on mainnet: a question round trip takes 11 to 21 s (most of it block ti
 
 You need a NEAR **mainnet** wallet (Meteor, HOT, Intear or MyNearWallet) with about **0.5 NEAR**. Most of it is only reserved for gas and comes straight back; a question really costs about 0.011 NEAR.
 
-1. Open the live app (link at the top) → you see the market with listing #0, "First-depositor inflation bug in an ERC-4626 vault", marked **Sold**, and its three answered questions.
+1. Open https://sphinx-near.vercel.app → you see the market with listing #0, "First-depositor inflation bug in an ERC-4626 vault", marked **Sold**, and its three answered questions.
 2. Click **Verify** → you see the box's public key, read live from the contract, and how each guarantee is enforced.
 3. Click **Sell a secret**, sign in, type a title, at least 20 characters of secret and a lowest price like `0.05`, then **Seal and list** → your wallet asks you to approve `list`; after it confirms you land on your new listing, showing the fingerprint and "Lowest price: Sealed".
 4. Sign in with a **different** account and open that listing. Ask "Does it contain more than ten words?" → the answer shows "the box is thinking…", then within about 30 seconds turns into **YES** or **NO** with a confidence.
