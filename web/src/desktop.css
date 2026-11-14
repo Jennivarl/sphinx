@@ -218,8 +218,8 @@
   .space { position: relative; height: 100vh; min-height: 720px; display: grid; place-items: center; overflow: hidden; }
   .field {
     position: absolute; inset: 0; perspective: 1100px; perspective-origin: 50% 45%; pointer-events: none;
-    -webkit-mask-image: radial-gradient(ellipse 34% 30% at 50% 52%, transparent 40%, #000 100%);
-    mask-image: radial-gradient(ellipse 34% 30% at 50% 52%, transparent 40%, #000 100%);
+    -webkit-mask-image: radial-gradient(ellipse 46% 36% at 50% 52%, transparent 55%, #000 100%);
+    mask-image: radial-gradient(ellipse 46% 36% at 50% 52%, transparent 55%, #000 100%);
   }
   .tile {
     position: absolute; left: var(--x); top: 0; width: var(--s); height: var(--s); display: grid; place-items: center;
