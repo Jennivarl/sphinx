@@ -99,11 +99,11 @@ git clone https://github.com/Jennivarl/sphinx.git
 cd sphinx
 ```
 
-1. **Contract unit tests** (27 tests: listing rules, question limits per account and per listing, three offers per account, sale lock, pay only on a confirmed deal, never more than the deposit, full refund on failure):
+1. **Contract unit tests** (30 tests: listing rules, question limits per account and per listing, failed runs give questions back, three offers per account, the buyer pays the sale record storage, sale lock, pay only on a confirmed deal, never more than the deposit, full refund on failure):
    ```bash
    cd contract && cargo +1.86 test
    ```
-   Expected: `test result: ok. 27 passed`.
+   Expected: `test result: ok. 30 passed`.
 2. **Sealed box unit tests** (22 tests: owner stamps, random price point and its bounds, no overlap, deposit cap, overflow, leak-proof verdict parsing, coarse confidence, trap scan fails closed, reversed answers must flip, fishing questions, attested models only):
    ```bash
    cd ../enclave && cargo +1.84 test --lib
@@ -149,7 +149,7 @@ Free during the hackathon. The model: a small fee on each settled sale (taken in
 | `contract/` | NEAR smart contract (Rust, near-sdk 5) and its unit tests |
 | `enclave/` | The sealed box: a `wasm32-wasip2` program OutLayer runs inside Intel TDX, with unit tests for its pure logic |
 | `web/` | The website (Vite, React, TypeScript) |
-| `scripts/` | Account setup, deploy, box key refresh, the end-to-end proof and a transaction reader |
+| `scripts/` | Mainnet wallet setup, deploy, box key refresh, demo listings and the end-to-end proof |
 
 ## Libraries
 

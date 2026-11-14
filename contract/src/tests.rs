@@ -1,3 +1,4 @@
+#![allow(unused_must_use)] // calls under test return promises the test does not need
 use super::*;
 use near_sdk::test_utils::{accounts, VMContextBuilder};
 use near_sdk::testing_env;
@@ -162,9 +163,14 @@ fn failed_run_gives_the_question_back() {
     assert_eq!(c.questions_left(id, accounts(2)), 5);
 }
 
+fn storage_of(c: &Sphinx, id: u64) -> u128 {
+    c.sale_storage(id).0
+}
+
 fn bought(escrow_near: u128) -> (Sphinx, u64) {
     let (mut c, id) = listed();
-    ctx(2, escrow_near * NEAR + RUN_FEE.as_yoctonear());
+    let storage = storage_of(&c, id);
+    ctx(2, escrow_near * NEAR + RUN_FEE.as_yoctonear() + storage);
     c.buy(id, "SEALED_CEILING".into(), BUYER_KEY.into());
     (c, id)
 }
@@ -199,6 +205,7 @@ fn deal_marks_sold_and_stores_the_sealed_secret() {
         id,
         accounts(2),
         U128(5 * NEAR),
+        U128(storage_of(&c, id)),
         Ok(Some(json!({ "ok": true, "deal": true, "price": price.to_string(), "sealed_for_buyer": "FOR_BUYER" }))),
     );
     assert_eq!(out["deal"], json!(true));
@@ -218,6 +225,7 @@ fn no_overlap_reopens_the_listing() {
         id,
         accounts(2),
         U128(5 * NEAR),
+        U128(storage_of(&c, id)),
         Ok(Some(json!({ "ok": true, "deal": false, "reason": "the sealed limits do not overlap" }))),
     );
     assert_eq!(out["deal"], json!(false));
@@ -232,6 +240,7 @@ fn price_above_escrow_is_never_paid() {
         id,
         accounts(2),
         U128(5 * NEAR),
+        U128(storage_of(&c, id)),
         Ok(Some(json!({ "ok": true, "deal": true, "price": (6 * NEAR).to_string(), "sealed_for_buyer": "X" }))),
     );
     assert_eq!(out["deal"], json!(false));
@@ -241,7 +250,7 @@ fn price_above_escrow_is_never_paid() {
 #[test]
 fn box_failure_refunds_and_reopens() {
     let (mut c, id) = bought(5);
-    let out = c.on_settled(id, accounts(2), U128(5 * NEAR), Err(PromiseError::Failed));
+    let out = c.on_settled(id, accounts(2), U128(5 * NEAR), U128(storage_of(&c, id)), Err(PromiseError::Failed));
     assert_eq!(out["deal"], json!(false));
     assert_eq!(out["reason"], json!("the sealed box did not answer"));
     assert_eq!(c.get_listing(id).unwrap().status, Status::Open);
@@ -254,6 +263,7 @@ fn missing_sealed_secret_is_no_deal() {
         id,
         accounts(2),
         U128(5 * NEAR),
+        U128(storage_of(&c, id)),
         Ok(Some(json!({ "ok": true, "deal": true, "price": NEAR.to_string() }))),
     );
     assert_eq!(out["deal"], json!(false));
@@ -279,9 +289,9 @@ fn seller_can_close_an_open_listing() {
 fn offers_are_capped_per_account() {
     let (mut c, id) = listed();
     for _ in 0..MAX_OFFERS_PER_ACCOUNT {
-        ctx(2, NEAR + RUN_FEE.as_yoctonear());
+        ctx(2, NEAR + RUN_FEE.as_yoctonear() + storage_of(&c, id));
         c.buy(id, "SEALED_CEILING".into(), BUYER_KEY.into());
-        c.on_settled(id, accounts(2), U128(NEAR), Ok(Some(json!({ "ok": true, "deal": false, "reason": "no overlap" }))));
+        c.on_settled(id, accounts(2), U128(NEAR), U128(storage_of(&c, id)), Ok(Some(json!({ "ok": true, "deal": false, "reason": "no overlap" }))));
     }
     assert_eq!(c.offers_left(id, accounts(2)), 0);
     assert_eq!(c.offers_left(id, accounts(3)), MAX_OFFERS_PER_ACCOUNT);
@@ -292,9 +302,9 @@ fn offers_are_capped_per_account() {
 fn fourth_offer_is_refused() {
     let (mut c, id) = listed();
     for _ in 0..=MAX_OFFERS_PER_ACCOUNT {
-        ctx(2, NEAR + RUN_FEE.as_yoctonear());
+        ctx(2, NEAR + RUN_FEE.as_yoctonear() + storage_of(&c, id));
         c.buy(id, "SEALED_CEILING".into(), BUYER_KEY.into());
-        c.on_settled(id, accounts(2), U128(NEAR), Ok(Some(json!({ "ok": true, "deal": false }))));
+        c.on_settled(id, accounts(2), U128(NEAR), U128(storage_of(&c, id)), Ok(Some(json!({ "ok": true, "deal": false }))));
     }
 }
 
@@ -312,4 +322,33 @@ fn listing_question_cap_holds_across_accounts() {
         testing_env!(b.build());
         c.ask(id, "Does it describe a bug that can drain funds?".into());
     }
+}
+
+#[test]
+#[should_panic(expected = "for the sale record")]
+fn buy_must_cover_the_sale_record_storage() {
+    let (mut c, id) = listed();
+    // Enough for a price and the run fee, but nothing for the sale record.
+    ctx(2, RUN_FEE.as_yoctonear() + 1);
+    c.buy(id, "SEALED_CEILING".into(), BUYER_KEY.into());
+}
+
+#[test]
+fn sale_storage_grows_with_the_secret() {
+    let (c, id) = listed();
+    let small = storage_of(&c, id);
+    ctx(1, NEAR);
+    let mut c = c;
+    let big = c.list("t".into(), "".into(), "audit".into(), "S".repeat(10_000), HASH.into(), "F".into());
+    assert!(storage_of(&c, big) > small);
+}
+
+#[test]
+fn failed_run_gives_the_listing_question_back() {
+    let (mut c, id) = listed();
+    ctx(2, ASK_DEPOSIT.as_yoctonear());
+    c.ask(id, "Does it describe a bug that can drain funds?".into());
+    assert_eq!(c.get_listing(id).unwrap().questions, 1);
+    c.on_answer(id, 0, Err(PromiseError::Failed));
+    assert_eq!(c.get_listing(id).unwrap().questions, 0);
 }

@@ -390,6 +390,13 @@ function Offer({ listing, account, config, signIn, onSent }: { listing: Listing;
   const [max, setMax] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [offersLeft, setOffersLeft] = useState<number | null>(null);
+  const [storage, setStorage] = useState<string>("0");
+
+  useEffect(() => {
+    view<string>("sale_storage", { listing_id: listing.id }).then(setStorage).catch(() => setStorage("0"));
+    if (account) view<number>("offers_left", { listing_id: listing.id, account_id: account }).then(setOffersLeft).catch(() => {});
+  }, [listing.id, account]);
 
   const offer = async () => {
     setErr("");
@@ -405,7 +412,7 @@ function Offer({ listing, account, config, signIn, onSent }: { listing: Listing;
     try {
       const key = getOrCreateUnlockKey(account);
       const sealedCeiling = sealFor(config.box_public_key, account, maxYocto);
-      const deposit = (BigInt(maxYocto) + BigInt(RUN_FEE)).toString();
+      const deposit = (BigInt(maxYocto) + BigInt(RUN_FEE) + BigInt(storage)).toString();
       await call("buy", { listing_id: listing.id, sealed_ceiling: sealedCeiling, buyer_public_key: key.publicKey }, deposit);
       await onSent();
     } catch (e) {
@@ -425,9 +432,14 @@ function Offer({ listing, account, config, signIn, onSent }: { listing: Listing;
       </p>
       <div className="ask">
         <input value={max} inputMode="decimal" onChange={(e) => setMax(e.target.value)} placeholder="Most you would pay, in NEAR" />
-        <button disabled={busy} onClick={offer}>{busy ? "Sealing…" : account ? "Seal offer" : "Sign in to offer"}</button>
+        <button disabled={busy || offersLeft === 0} onClick={offer}>
+          {busy ? "Sealing…" : account ? `Seal offer (${offersLeft ?? 3} left)` : "Sign in to offer"}
+        </button>
       </div>
-      <p className="fine">You attach your maximum plus 0.01 NEAR for the sealed run, so the attached amount is visible on-chain; your true limit inside it is not.</p>
+      <p className="fine">
+        You attach your maximum, plus 0.01 NEAR for the sealed run, plus {yoctoToNear(storage)} NEAR to store the sale (refunded if there is no deal).
+        The attached amount is visible on-chain; your true limit inside it is not.
+      </p>
       {account && (
         <p className="fine">
           The secret will be sealed to an unlock key kept in this browser.{" "}

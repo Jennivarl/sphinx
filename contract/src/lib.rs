@@ -30,6 +30,8 @@ const CALLBACK_GAS: Gas = Gas::from_tgas(30);
 const MAX_TITLE: usize = 120;
 const MAX_PITCH: usize = 600;
 const MAX_SEALED: usize = 24_000;
+/// Bytes a sale record needs beyond the re-sealed secret (ids, price, keys, borsh overhead).
+const SALE_RECORD_OVERHEAD: u64 = 400;
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -215,7 +217,7 @@ impl Sphinx {
         require!(attached >= cost, format!("attach at least {} yoctoNEAR for storage", cost.as_yoctonear()));
         let refund = attached.saturating_sub(cost);
         if !refund.is_zero() {
-            Promise::new(env::predecessor_account_id()).transfer(refund);
+            let _ = Promise::new(env::predecessor_account_id()).transfer(refund);
         }
         event("listed", json!({ "id": id, "seller": env::predecessor_account_id() }));
         id
@@ -299,10 +301,15 @@ impl Sphinx {
             }
             _ => {
                 q.answer = "failed".into();
-                // A failed run does not use up one of the asker's five questions.
+                // A failed run uses up neither one of the asker's five questions
+                // nor one of the listing's thirty.
                 let key = asked_key(listing_id, &q.asker);
                 if let Some(c) = self.asked.get(&key).copied() {
                     self.asked.insert(key, c.saturating_sub(1));
+                }
+                if let Some(mut listing) = self.listings.get(&listing_id).cloned() {
+                    listing.questions = listing.questions.saturating_sub(1);
+                    self.listings.insert(listing_id, listing);
                 }
             }
         }
@@ -315,8 +322,9 @@ impl Sphinx {
     // ---------- buying ----------
 
     /// Buys a secret. `sealed_ceiling` is the buyer's highest price, sealed to
-    /// the box. Attach the most you could pay plus 0.01 NEAR for the run; the
-    /// box charges the middle of the two sealed prices and the rest comes back.
+    /// the box. Attach the most you could pay, plus 0.01 NEAR for the run, plus
+    /// the storage for the sale record (`sale_storage`). The box charges a random
+    /// point 25-75% between the two sealed prices and the rest comes back.
     /// `buyer_public_key` (base64, 32 bytes) is the key the secret is sealed to.
     #[payable]
     pub fn buy(&mut self, listing_id: u64, sealed_ceiling: String, buyer_public_key: String) -> Promise {
@@ -327,8 +335,12 @@ impl Sphinx {
         require!(!sealed_ceiling.is_empty() && sealed_ceiling.len() <= 512, "sealed ceiling is missing");
         require!(buyer_public_key.len() == 44, "buyer public key must be 32 bytes in base64");
         let attached = env::attached_deposit();
-        require!(attached > RUN_FEE, "attach your maximum price plus 0.01 NEAR");
-        let escrow = attached.saturating_sub(RUN_FEE);
+        let storage = Self::sale_storage_cost(&listing);
+        require!(
+            attached > RUN_FEE.saturating_add(storage),
+            format!("attach your maximum price plus 0.01 NEAR plus {} yoctoNEAR for the sale record", storage.as_yoctonear())
+        );
+        let escrow = attached.saturating_sub(RUN_FEE).saturating_sub(storage);
         let key = offers_key(listing_id, &buyer);
         let offers = self.asked.get(&key).copied().unwrap_or(0);
         require!(offers < MAX_OFFERS_PER_ACCOUNT, "you already made 3 offers on this listing");
@@ -352,7 +364,7 @@ impl Sphinx {
         self.run_box(input, buyer.clone(), RUN_FEE).then(
             Self::ext(env::current_account_id())
                 .with_static_gas(CALLBACK_GAS)
-                .on_settled(listing_id, buyer, U128(escrow.as_yoctonear())),
+                .on_settled(listing_id, buyer, U128(escrow.as_yoctonear()), U128(storage.as_yoctonear())),
         )
     }
 
@@ -362,10 +374,13 @@ impl Sphinx {
         listing_id: u64,
         buyer: AccountId,
         escrow: U128,
+        storage: U128,
         #[callback_result] result: Result<Option<Value>, PromiseError>,
     ) -> Value {
         let mut listing = self.listings.get(&listing_id).cloned().expect("no such listing");
         let escrow = NearToken::from_yoctonear(escrow.0);
+        // Paid by the buyer in `buy`: kept for the sale record, or refunded with the escrow.
+        let storage = NearToken::from_yoctonear(storage.0);
 
         let deal = match &result {
             Ok(Some(v)) if v["ok"] == json!(true) && v["deal"] == json!(true) => {
@@ -382,10 +397,10 @@ impl Sphinx {
         match deal {
             Some((price, sealed_for_buyer)) => {
                 let price_token = NearToken::from_yoctonear(price);
-                Promise::new(listing.seller.clone()).transfer(price_token);
+                let _ = Promise::new(listing.seller.clone()).transfer(price_token);
                 let change = escrow.saturating_sub(price_token);
                 if !change.is_zero() {
-                    Promise::new(buyer.clone()).transfer(change);
+                    let _ = Promise::new(buyer.clone()).transfer(change);
                 }
                 listing.status = Status::Sold;
                 listing.buyer = Some(buyer.clone());
@@ -405,7 +420,7 @@ impl Sphinx {
                 json!({ "deal": true, "price": U128(price) })
             }
             None => {
-                Promise::new(buyer.clone()).transfer(escrow);
+                let _ = Promise::new(buyer.clone()).transfer(escrow.saturating_add(storage));
                 listing.status = Status::Open;
                 self.listings.insert(listing_id, listing);
                 let reason = match &result {
@@ -453,6 +468,12 @@ impl Sphinx {
         self.questions.get(&listing_id).cloned().unwrap_or_default()
     }
 
+    /// What a buyer must attach on top of their maximum price and the run fee.
+    pub fn sale_storage(&self, listing_id: u64) -> U128 {
+        let listing = self.listings.get(&listing_id).expect("no such listing");
+        U128(Self::sale_storage_cost(listing).as_yoctonear())
+    }
+
     pub fn offers_left(&self, listing_id: u64, account_id: AccountId) -> u32 {
         MAX_OFFERS_PER_ACCOUNT - self.asked.get(&offers_key(listing_id, &account_id)).copied().unwrap_or(0)
     }
@@ -467,6 +488,12 @@ impl Sphinx {
 }
 
 impl Sphinx {
+    /// The re-sealed secret is never longer than the seller's sealed envelope,
+    /// so this always covers the sale record the callback writes.
+    fn sale_storage_cost(listing: &Listing) -> NearToken {
+        env::storage_byte_cost().saturating_mul(u128::from(listing.sealed_secret.len() as u64 + SALE_RECORD_OVERHEAD))
+    }
+
     fn run_box(&self, input: Value, payer: AccountId, deposit: NearToken) -> Promise {
         let args = json!({
             "source": { "Project": { "project_id": self.project_id, "version_key": null } },
