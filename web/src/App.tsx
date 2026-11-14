@@ -145,7 +145,7 @@ function Market() {
           {items?.map((l) => (
             <a key={l.id} className="card" href={`#/s/${l.id}`}>
               <div className="card-top">
-                <span className="tag">{categoryLabel(l.category)}</span>
+                <span className="tags"><span className="tag">{categoryLabel(l.category)}</span>{l.seller === CONTRACT_ID && <span className="tag demo" title="Example listed by the Sphinx team to show the flow">Demo</span>}</span>
                 <span className={`status s-${l.status.toLowerCase()}`}>{l.status}</span>
               </div>
               <h3>{l.title}</h3>
@@ -293,11 +293,12 @@ function ListingPage({ id, account, signIn }: { id: number; account: string | nu
     <section className="listing">
       <a href="#/" className="back">← Market</a>
       <div className="card-top">
-        <span className="tag">{categoryLabel(listing.category)}</span>
+        <span className="tags"><span className="tag">{categoryLabel(listing.category)}</span>{listing.seller === CONTRACT_ID && <span className="tag demo" title="Example listed by the Sphinx team to show the flow">Demo</span>}</span>
         <span className={`status s-${listing.status.toLowerCase()}`}>{listing.status}</span>
       </div>
       <h1>{listing.title}</h1>
       <p className="lead">{listing.pitch}</p>
+      {listing.seller === CONTRACT_ID && <p className="fine">Demo listing: an example sealed by the Sphinx team so you can try asking and buying. The flow, the sealed box and every transaction are real.</p>}
       <dl className="facts">
         <div><dt>Seller</dt><dd><a href={`${EXPLORER}/address/${listing.seller}`} target="_blank" rel="noreferrer">{short(listing.seller)}</a></dd></div>
         <div><dt>Fingerprint</dt><dd className="mono">{listing.secret_hash}</dd></div>
