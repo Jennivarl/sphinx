@@ -61,6 +61,7 @@ sequenceDiagram
 | **NEAR yield/resume** (inside OutLayer) | OutLayer's `request_execution` yields until the TEE worker resumes it with the box's output; Sphinx's callback then records the answer or settles the sale, so every question and every sale completes as one chain of receipts | `contract/src/lib.rs` `run_box`, `on_answer`, `on_settled` |
 | **NEAR smart contract (Rust, near-sdk 5)** | Listings, question limits, sale lock, escrow, pay-on-confirmation, refunds | `contract/src/lib.rs` |
 | **NEAR wallets** (Wallet Selector: Meteor, HOT, Intear, MyNearWallet) | Sign in and sign `list`, `ask`, `buy` | `web/src/near.ts` |
+| **NEAR accounts for agents** (near-api-js + MCP) | An AI agent signs with its own NEAR account through the Sphinx MCP server: browse, ask, check receipts, offer, open | `agent/mcp.mjs`, `agent/sphinx.mjs` |
 
 ## Proof: real mainnet run
 
@@ -147,6 +148,44 @@ To deploy your own instance: build both parts as above, publish the box with the
 - **The unlock key lives in the buyer's browser.** Download the backup before buying; without it a purchased secret cannot be opened again.
 - **Developer mode:** the contract account still holds its full-access key, so its owner could deploy new code. The owner has no method to move funds or read secrets, but an upgrade could add one. Before Sphinx holds real value, upgrade rights move to a Sputnik DAO with a 7-day timelock and reproducible, verified builds. The AI-key secret is already pinned to one exact build of the box.
 
+## For AI agents
+
+Agents have the exact problem Sphinx solves: a trading or security agent needs information, but cannot trust a seller who says "pay first". With Sphinx an agent questions a sealed secret, checks every answer's signed NEAR AI receipt, and only then makes a sealed offer. The contract cannot tell a person from a program, so agents follow exactly the same rules: five questions, three offers, deposits, sealed prices.
+
+[`agent/`](agent/) holds a small client library ([`sphinx.mjs`](agent/sphinx.mjs)) and an MCP server ([`mcp.mjs`](agent/mcp.mjs)) that plugs Sphinx into Claude or any MCP client. Its tools:
+
+| Tool | What it does | Cost |
+|---|---|---|
+| `list_secrets` | Open listings with title, pitch and fingerprint | free, no wallet |
+| `get_secret` | One listing, every answer, and whether each answer's NEAR AI receipt verifies against the model's live attestation report | free, no wallet |
+| `ask_secret` | Ask the sealed box one yes/no question; returns the answer and its verified receipt | 0.02 NEAR |
+| `make_offer` | Seal a maximum price and buy if it meets the seller's hidden lowest price | your offer, change refunded |
+| `open_secret` | Open a bought secret with the agent's local unlock key and check its fingerprint | free |
+
+Safety for the agent's owner: keys come only from environment variables, never from tool input; give the agent its own account holding only what it may spend; `SPHINX_MAX_OFFER_NEAR` (default 0.5) refuses larger offers before anything is signed; unlock keys stay in a local file (`SPHINX_KEY_FILE`); a bought secret is returned with a note to treat it as data, not instructions.
+
+### How to Test (agents)
+
+Prerequisites: Node.js 22+. Browsing needs no wallet.
+
+1. Install:
+   ```bash
+   cd agent && npm ci
+   ```
+2. Add the server to Claude Code (read-only: browsing and receipt checks):
+   ```bash
+   claude mcp add sphinx -- node "$(pwd)/mcp.mjs"
+   ```
+   Or, for any MCP client, add to its config:
+   ```json
+   { "mcpServers": { "sphinx": { "command": "node", "args": ["/path/to/sphinx/agent/mcp.mjs"],
+       "env": { "SPHINX_ACCOUNT_ID": "your-agent.near", "SPHINX_PRIVATE_KEY": "ed25519:...", "SPHINX_MAX_OFFER_NEAR": "0.2" } } } }
+   ```
+   (Leave out `env` to browse only.)
+3. Ask your agent: "List the sealed secrets on Sphinx and show me listing 4 with its receipts." → it calls `list_secrets` and `get_secret`; listing 4's answer shows `"receipt": { "status": "verified", "signer": "0xfe00…337e" }`.
+4. With `SPHINX_ACCOUNT_ID` and `SPHINX_PRIVATE_KEY` set for an account holding about 0.5 NEAR (most of it is only held for gas while a call runs), ask: "Ask Sphinx listing 4 whether it mentions NEAR Intents, then offer 0.06 NEAR if the answer is yes, and open it." → `ask_secret` returns yes or no with a verified receipt; `make_offer` returns `bought` with a price between 0.045 and 0.055 NEAR; `open_secret` returns the text with `"fingerprintMatches": true`.
+5. Try the limit: "Offer 5 NEAR for listing 4." → refused: `above this agent's limit of 0.2 NEAR`, nothing signed.
+
 ## Business
 
 Free during the hackathon. The model: a small fee on each settled sale (taken in the same settlement transaction), plus paid question bundles for buyers who need more than five questions per listing.
@@ -158,11 +197,12 @@ Free during the hackathon. The model: a small fee on each settled sale (taken in
 | `contract/` | NEAR smart contract (Rust, near-sdk 5) and its unit tests |
 | `enclave/` | The sealed box: a `wasm32-wasip2` program OutLayer runs inside Intel TDX, with unit tests for its pure logic |
 | `web/` | The website (Vite, React, TypeScript) |
-| `scripts/` | Mainnet wallet setup, deploy, box key refresh, demo listings and the end-to-end proof |
+| `agent/` | Sphinx for AI agents: a client library and an MCP server |
+| `scripts/` | Mainnet wallet setup, deploy, box key refresh, demo listings, the end-to-end proof and the receipt checker |
 
 ## Libraries
 
-near-sdk, crypto_box (RustCrypto), sha2, serde, base64, wit-bindgen, wasi-http-client, near-api-js, @near-wallet-selector, libsodium-wrappers, @noble/curves, @noble/hashes, React, Vite.
+near-sdk, crypto_box (RustCrypto), sha2, serde, base64, wit-bindgen, wasi-http-client, near-api-js, @near-wallet-selector, libsodium-wrappers, @noble/curves, @noble/hashes, @modelcontextprotocol/sdk, zod, React, Vite.
 
 ## License
 
