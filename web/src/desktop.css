@@ -287,7 +287,26 @@
   .landing-foot { overflow: hidden; padding: 0 32px; border-top: 1px solid var(--line); }
   .landing-foot-links { display: flex; gap: 24px; padding: 24px 0; font-size: 13px; color: var(--muted); }
   .landing-foot-links a { color: var(--muted); }
-  .wordmark { font-size: 24vw; line-height: 0.74; font-weight: 600; letter-spacing: -0.06em; color: var(--text); text-align: center; margin-bottom: -2vw; user-select: none; }
+
+  /* ---------- Rows, tags and the answer receipt ---------- */
+  .row-value { display: inline-flex; align-items: baseline; gap: 4px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+  .row-value em { font-style: normal; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .row-value.sealed { align-items: center; gap: 6px; font-size: 15px; font-weight: 500; color: var(--text); }
+  .row-value.sealed svg { color: var(--gold-text); }
+  .row-end { gap: 6px; }
+  .badge { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; font: 600 10px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+  .b-open, .b-yes { background: color-mix(in srgb, var(--yes) 14%, transparent); color: var(--yes); }
+  .b-no { background: color-mix(in srgb, var(--no) 12%, transparent); color: var(--no); }
+  .b-settling { background: var(--gold-soft); color: var(--gold-text); }
+  .b-sold, .b-closed, .b-refused { background: var(--line); color: var(--muted); }
+  .receipt .hash { margin-left: auto; }
+  .answer-float { gap: 8px; padding: 16px 18px; border-radius: 18px; border: 1px solid var(--line); }
+  .af-label { font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .af-verdict { display: flex; align-items: center; gap: 10px; }
+  .af-verdict .answer-verdict { font-size: 28px; letter-spacing: -0.02em; line-height: 1; }
+  .af-receipt { display: block; margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .af-receipt .receipt { display: flex; width: 100%; gap: 6px; font-size: 12.5px; }
+
 }
 
 @media (min-width: 961px) and (prefers-reduced-motion: reduce) {

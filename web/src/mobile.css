@@ -259,7 +259,26 @@
   .landing-foot { overflow: hidden; padding: 0 16px; border-top: 1px solid var(--line); margin-top: 0; }
   .landing-foot-links { display: flex; flex-wrap: wrap; gap: 12px 20px; padding: 20px 0; font-size: 13px; color: var(--muted); }
   .landing-foot-links a { color: var(--muted); }
-  .wordmark { font-size: 26vw; line-height: 0.74; font-weight: 600; letter-spacing: -0.06em; color: var(--text); text-align: center; margin-bottom: -2vw; user-select: none; }
+
+  /* ---------- Rows, tags and the answer receipt ---------- */
+  .row-value { display: inline-flex; align-items: baseline; gap: 3px; font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .row-value em { font-style: normal; font-size: 11px; font-weight: 500; color: var(--muted); }
+  .row-value.sealed { align-items: center; gap: 4px; font-size: 13px; font-weight: 500; }
+  .row-value.sealed svg { color: var(--gold-text); }
+  .row-end { gap: 5px; }
+  .badge { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; font: 600 10px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+  .b-open, .b-yes { background: color-mix(in srgb, var(--yes) 14%, transparent); color: var(--yes); }
+  .b-no { background: color-mix(in srgb, var(--no) 12%, transparent); color: var(--no); }
+  .b-settling { background: var(--gold-soft); color: var(--gold-text); }
+  .b-sold, .b-closed, .b-refused { background: var(--line); color: var(--muted); }
+  .receipt .hash { margin-left: auto; }
+  .answer-float { gap: 6px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line); }
+  .af-label { font: 500 10px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .af-verdict { display: flex; align-items: center; gap: 8px; }
+  .af-verdict .answer-verdict { font-size: 24px; line-height: 1; }
+  .af-receipt { display: block; margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .af-receipt .receipt { display: flex; width: 100%; gap: 6px; font-size: 12px; }
+
 }
 
 @media (max-width: 960px) and (prefers-reduced-motion: reduce) {

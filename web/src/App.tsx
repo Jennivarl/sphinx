@@ -249,9 +249,9 @@ function Seal({ hash, size = 200, state = "open" }: { hash: string; size?: numbe
   );
 }
 
-/** Status as a coloured word, the way a store marks a product, not a chip. */
+/** Status as a small filled tag, like a paid stamp on an invoice. */
 function Status({ status }: { status: Listing["status"] }) {
-  return <span className={`state s-${status.toLowerCase()}`}>{status}</span>;
+  return <span className={`badge b-${status.toLowerCase()}`}>{status}</span>;
 }
 
 /** One listing as a row: seal, title and details, then the figure that matters. */
@@ -264,11 +264,15 @@ function ListingRow({ l }: { l: Listing }) {
         <strong>{l.title}</strong>
         <small>
           {categoryLabel(l.category)}
-          {l.seller === CONTRACT_ID ? " · Demo" : ""} · #{l.id}
+          {l.seller === CONTRACT_ID ? " · Demo" : ""} · {plural(l.questions, "question")} asked
         </small>
       </span>
       <span className="row-end">
-        <strong className="num">{sold && l.price ? `${yoctoToNear(l.price)} NEAR` : plural(l.questions, "question")}</strong>
+        {sold && l.price ? (
+          <span className="row-value num">{yoctoToNear(l.price)} <em>NEAR</em></span>
+        ) : (
+          <span className="row-value sealed"><Lock size={14} strokeWidth={1.75} aria-hidden="true" /> Sealed</span>
+        )}
         <Status status={l.status} />
       </span>
     </a>
@@ -459,9 +463,13 @@ function Landing({ accountButton }: { accountButton: ReactNode }) {
           <img src={BOX_IMAGE} alt="A sealed obsidian box with a gold seam" />
           {showcase && (
             <figcaption className="answer-float">
+              <span className="af-label">Asked the Sphinx · listing #{showcase.listing.id}</span>
               <span className="answer-q">{showcase.question.question}</span>
-              <span className={`answer-verdict v-${showcase.question.answer}`}>{showcase.question.answer}</span>
-              {showcase.question.model && <ReceiptBadge model={showcase.question.model} receipt={showcase.receipt} />}
+              <span className="af-verdict">
+                <span className={`answer-verdict v-${showcase.question.answer}`}>{showcase.question.answer}</span>
+                <span className={`badge b-${showcase.question.answer}`}>{confidenceLabel(showcase.question.confidence)}</span>
+              </span>
+              {showcase.question.model && <span className="af-receipt"><ReceiptBadge model={showcase.question.model} receipt={showcase.receipt} /></span>}
             </figcaption>
           )}
         </figure>
@@ -499,7 +507,6 @@ function Landing({ accountButton }: { accountButton: ReactNode }) {
           <a href={OUTLAYER_APP} target="_blank" rel="noreferrer">OutLayer</a>
           <a href={REPO} target="_blank" rel="noreferrer">Source</a>
         </div>
-        <div className="wordmark" aria-hidden="true">SPHINX</div>
       </footer>
     </div>
   );
