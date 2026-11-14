@@ -88,7 +88,7 @@ Measured on mainnet: a question round trip takes 10 to 22 s; with the trap scan 
 
 You need a NEAR **mainnet** wallet (Meteor, HOT, Intear or MyNearWallet) with about **0.5 NEAR**. Most of it is only reserved for gas and comes straight back; a question really costs about 0.011 NEAR.
 
-1. Open https://asksphinx.xyz → you see the market: two open **Demo** listings (#5 and #6); the sold proof listings (#0, #3, #4) stay reachable at `#/s/<number>` with their answered questions.
+1. Open https://asksphinx.xyz → the landing page. Click **Open the market** → you see two open **Demo** listings (#5 and #6) and the sold proof listings (#0, #3, #4), each with its answered questions. The search box at the top finds listings by words in their title.
 2. Click **Verify** → you see the box's public key, read live from the contract, and how each guarantee is enforced.
 3. Click **Sell a secret**, sign in, type a title, at least 20 characters of secret and a lowest price like `0.05`, then **Seal and list** → your wallet asks you to approve `list`; after it confirms you land on your new listing, showing the fingerprint and "Lowest price: Sealed".
 4. Sign in with a **different** account (or open a **Demo** listing) and ask "Does it explain how to fix the problem?" → the answer shows "the box is thinking…", then within about 40 seconds turns into **YES** or **NO** with a confidence level, and a green line "✓ signed inside NEAR AI's secure hardware" that your browser checked against NEAR AI's attestation report.

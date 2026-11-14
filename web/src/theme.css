@@ -1,72 +1,61 @@
 /* Shared by both versions: colours, fonts, browser surfaces, the seal and motion. */
+/* Light is the default: warm paper, black ink and one sealing-wax vermilion. Dark is an option. */
 :root {
-  --bg: #0b0a08;
-  --surface: #12110e;
-  --surface-2: #1a1813;
-  --line: rgba(236, 230, 216, 0.09);
-  --line-strong: rgba(236, 230, 216, 0.17);
-  --text: #ece6d8;
-  --muted: #a39b8b;
-  --gold: #d8b25f;
-  --gold-text: #d8b25f;
-  --gold-ink: #1b160c;
-  --gold-hover: #e3c278;
-  --gold-soft: rgba(216, 178, 95, 0.12);
-  --gold-select: rgba(216, 178, 95, 0.3);
-  --yes: #86c9a0;
-  --no: #e8937f;
-  --refused: #b9ab8f;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -12px rgba(0, 0, 0, 0.55);
+  --bg: #f7f4ee;
+  --surface: #fdfbf7;
+  --surface-2: #efe9df;
+  --line: rgba(31, 27, 22, 0.09);
+  --line-strong: rgba(31, 27, 22, 0.18);
+  --text: #1f1b16;
+  --muted: #6b6257;
+  --ink: #1f1b16;
+  --ink-text: #fdfbf7;
+  --gold: #ff5a1f;
+  --gold-text: #c2410c;
+  --gold-ink: #1f1208;
+  --gold-hover: #ff7038;
+  --gold-soft: rgba(255, 90, 31, 0.12);
+  --gold-select: rgba(255, 90, 31, 0.22);
+  --yes: #1d7a45;
+  --no: #b4233a;
+  --refused: #7b7266;
+  --shadow: 0 1px 2px rgba(31, 27, 22, 0.05), 0 12px 32px -16px rgba(31, 27, 22, 0.18);
   --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
   --sans: "Geist Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  color-scheme: dark;
-}
-
-:root[data-theme="light"] {
-  --bg: #f5f1e8;
-  --surface: #fbf9f4;
-  --surface-2: #ede6d6;
-  --line: rgba(23, 20, 15, 0.1);
-  --line-strong: rgba(23, 20, 15, 0.2);
-  --text: #17140f;
-  --muted: #5f5849;
-  --gold: #c99f43;
-  --gold-text: #7a5810;
-  --gold-ink: #1b160c;
-  --gold-hover: #b88d31;
-  --gold-soft: rgba(160, 120, 30, 0.12);
-  --gold-select: rgba(201, 159, 67, 0.32);
-  --yes: #2c7549;
-  --no: #ad432d;
-  --refused: #74684f;
-  --shadow: 0 1px 2px rgba(60, 45, 20, 0.08), 0 14px 32px -14px rgba(60, 45, 20, 0.22);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #f5f1e8;
-    --surface: #fbf9f4;
-    --surface-2: #ede6d6;
-    --line: rgba(23, 20, 15, 0.1);
-    --line-strong: rgba(23, 20, 15, 0.2);
-    --text: #17140f;
-    --muted: #5f5849;
-    --gold: #c99f43;
-    --gold-text: #7a5810;
-    --gold-ink: #1b160c;
-    --gold-hover: #b88d31;
-    --gold-soft: rgba(160, 120, 30, 0.12);
-    --gold-select: rgba(201, 159, 67, 0.32);
-    --yes: #2c7549;
-    --no: #ad432d;
-    --refused: #74684f;
-    --shadow: 0 1px 2px rgba(60, 45, 20, 0.08), 0 14px 32px -14px rgba(60, 45, 20, 0.22);
-    color-scheme: light;
-  }
+:root[data-theme="dark"] {
+  --bg: #12110f;
+  --surface: #1a1816;
+  --surface-2: #23211e;
+  --line: rgba(239, 233, 222, 0.08);
+  --line-strong: rgba(239, 233, 222, 0.16);
+  --text: #efe9de;
+  --muted: #a39b8f;
+  --ink: #efe9de;
+  --ink-text: #12110f;
+  --gold: #ff6a33;
+  --gold-text: #ff8a5c;
+  --gold-ink: #1f1208;
+  --gold-hover: #ff8250;
+  --gold-soft: rgba(255, 106, 51, 0.14);
+  --gold-select: rgba(255, 106, 51, 0.28);
+  --yes: #4cc38a;
+  --no: #f2607a;
+  --refused: #a39b8f;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -14px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
 }
+
+/* The mark is drawn twice, once per theme. */
+.mark { position: relative; display: inline-block; flex: none; }
+.mark img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mark-dark { display: none; }
+:root[data-theme="dark"] .mark-light { display: none; }
+:root[data-theme="dark"] .mark-dark { display: inline; }
 
 /* ---------- Base and browser surfaces ---------- */
 
@@ -89,11 +78,11 @@ img, svg { display: block; }
 /* ---------- The seal ---------- */
 
 .seal { overflow: visible; }
-.seal .mark { stroke: var(--gold); stroke-width: 1.6; stroke-linecap: round; opacity: 0.42; }
-.seal .mark.strong { opacity: 1; }
+.seal .tick { stroke: var(--gold); stroke-width: 1.6; stroke-linecap: round; opacity: 0.45; }
+.seal .tick.strong { opacity: 1; }
 .seal-core { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1; }
-.seal-sold .mark { stroke: var(--muted); opacity: 0.35; }
-.seal-sold .mark.strong { opacity: 0.7; }
+.seal-sold .tick { stroke: var(--muted); opacity: 0.35; }
+.seal-sold .tick.strong { opacity: 0.7; }
 .seal-sold .seal-medal { opacity: 0.55; filter: grayscale(0.6); }
 .seal-ring { transform-origin: 100px 100px; transition: transform 0.6s var(--ease); }
 
