@@ -151,7 +151,7 @@ function Market() {
               <h3>{l.title}</h3>
               <p>{l.pitch || "No public description."}</p>
               <div className="card-foot">
-                <span>{l.questions} question{l.questions === 1 ? "" : "s"} answered</span>
+                <span>{l.questions} question{l.questions === 1 ? "" : "s"} asked</span>
                 <span className="mono">#{l.secret_hash.slice(0, 10)}</span>
               </div>
             </a>
@@ -367,7 +367,7 @@ function Oracle(props: {
           <li key={i}>
             <span className="q">{item.question}</span>
             <span className={`verdict v-${item.answer}`}>
-              {item.answer === "pending" ? "the box is thinking…" : item.answer}
+              {item.answer === "pending" ? "the box is thinking…" : item.answer === "failed" ? "failed · not counted" : item.answer}
               {(item.answer === "yes" || item.answer === "no") && <small> {item.confidence}%</small>}
             </span>
           </li>
