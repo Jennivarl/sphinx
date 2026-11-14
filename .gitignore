@@ -1,6 +1,3 @@
-# Private working notes, never committed
-REQUIREMENTS.md
-
 # Secrets
 .env
 .env.*
@@ -10,8 +7,7 @@ REQUIREMENTS.md
 node_modules/
 dist/
 target/
-.next/
-IDEAS.md
-RESEARCH.md
-scripts/ask-input.json
+.vercel/
+
+# Logs
 *.log
